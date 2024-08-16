@@ -56,7 +56,7 @@ func NewTestEthBackend(privateKey *ecdsa.PrivateKey, alloc types.GenesisAlloc, d
 
 	// minerConfig := miner.DefaultConfig
 	minerConfig := miner.Config{}
-	minerConfig.PendingFeeRecipient = etherbase
+	// minerConfig.PendingFeeRecipient = etherbase
 	minerConfig.GasPrice = big.NewInt(1)
 	// Create Ethereum Service
 	config := &ethconfig.Config{
