@@ -8,14 +8,13 @@ import (
 
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/log"
 	"github.com/stretchr/testify/assert"
 )
 
 func TestSubscriber(t *testing.T) {
-	log.Root().SetHandler(log.StdoutHandler)
-	log.Root().SetHandler(log.LvlFilterHandler(log.LvlInfo, log.Root().GetHandler()))
-	// log.Root().SetHandler(log.DiscardHandler())
+	// log.SetDefault(log.NewLogger())
+	// log.Root().SetHandler(log.StdoutHandler)
+	// log.Root().SetHandler(log.LvlFilterHandler(log.LvlInfo, log.Root().GetHandler()))
 	client := newTestClient(t)
 	defer client.Close()
 

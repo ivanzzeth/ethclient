@@ -6,9 +6,9 @@ import (
 	"math/big"
 	"time"
 
-	"github.com/TheStarBoys/ethclient"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ivanzz/ethclient"
 )
 
 func main() {

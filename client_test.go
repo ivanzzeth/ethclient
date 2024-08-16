@@ -6,13 +6,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/TheStarBoys/ethclient/contracts"
 	"github.com/TheStarBoys/ethtypes"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ivanzz/ethclient/contracts"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -31,14 +30,23 @@ func deployTestContract(t *testing.T, ctx context.Context, client *Client) (comm
 }
 
 func newTestClient(t *testing.T) *Client {
-	backend, _ := NewTestEthBackend(privateKey, core.GenesisAlloc{
-		addr: core.GenesisAccount{
+	tmpDataDir := t.TempDir()
+	t.Log("testAddr:", addr)
+	backend, err := NewTestEthBackend(privateKey, types.GenesisAlloc{
+		addr: types.Account{
 			Balance: new(big.Int).Mul(big.NewInt(1000), ethtypes.Kether),
 		},
-	})
+	}, tmpDataDir)
+	if err != nil {
+		t.Fatal("newTestClient err:", err)
+	}
 	// defer backend.Close()
 
-	rpcClient, _ := backend.Attach()
+	rpcClient := backend.Attach()
+	if rpcClient == nil {
+		panic("newTestClient attach failed")
+	}
+
 	client, err := NewClient(rpcClient)
 	if err != nil {
 		t.Fatal(err)
@@ -48,14 +56,19 @@ func newTestClient(t *testing.T) *Client {
 }
 
 func TestBatchSendMsg(t *testing.T) {
-	log.Root().SetHandler(log.DiscardHandler())
-	client := newTestClient(t)
+	log.SetDefault(log.NewLogger(log.DiscardHandler()))
+	// client := newTestClient(t)
+	// client, err := Dial("http://localhost:8545")
+	client, err := Dial("https://sepolia.base.org")
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer client.Close()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
 	defer cancel()
 
-	mesgs := make(chan Message)
+	mesgs := make(chan Message, 10)
 	txs, errs := client.BatchSendMsg(ctx, mesgs)
 	go func() {
 		for i := 0; i < 5; i++ {
@@ -72,7 +85,11 @@ func TestBatchSendMsg(t *testing.T) {
 	}()
 
 	for tx := range txs {
-		js, _ := tx.MarshalJSON()
+		var js []byte
+		if tx != nil {
+			js, _ = tx.MarshalJSON()
+		}
+
 		err := <-errs
 		log.Info("Get Transaction", "tx", string(js), "err", err)
 		assert.Equal(t, nil, err)
@@ -81,7 +98,7 @@ func TestBatchSendMsg(t *testing.T) {
 }
 
 func TestCallContract(t *testing.T) {
-	log.Root().SetHandler(log.DiscardHandler())
+	// log.SetDefault(log.NewLogger(log.DiscardHandler()))
 	client := newTestClient(t)
 	defer client.Close()
 
@@ -100,6 +117,8 @@ func TestCallContract(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Deploy Contract err: %v", err)
 	}
+	blockNumber, _ := client.rawClient.BlockNumber(context.Background())
+	t.Log("blockNumber: ", blockNumber)
 	assert.Equal(t, true, contains)
 
 	// Call contract method `testFunc1` id -> 0x88655d98
@@ -159,7 +178,7 @@ func TestCallContract(t *testing.T) {
 }
 
 func TestContractRevert(t *testing.T) {
-	log.Root().SetHandler(log.DiscardHandler())
+	log.SetDefault(log.NewLogger(log.DiscardHandler()))
 	client := newTestClient(t)
 	defer client.Close()
 
@@ -197,9 +216,11 @@ func TestContractRevert(t *testing.T) {
 		t.Fatalf("Send single Message, err: %v", err)
 	}
 
-	client.ConfirmTx(contractCallTx.Hash(), 1, 2*time.Second)
+	confirmed, _ := client.ConfirmTx(contractCallTx.Hash(), 1, 2*time.Second)
+	assert.Equal(t, true, confirmed)
 	receipt, err := client.rawClient.TransactionReceipt(ctx, contractCallTx.Hash())
 	assert.Equal(t, nil, err)
+	assert.NotNil(t, receipt)
 	assert.Equal(t, types.ReceiptStatusFailed, receipt.Status)
 
 	t.Log("contractCallTx send sucessul", "txHash", contractCallTx.Hash().Hex())
