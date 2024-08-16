@@ -6,7 +6,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/TheStarBoys/ethtypes"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -34,7 +33,7 @@ func newTestClient(t *testing.T) *Client {
 	t.Log("testAddr:", addr)
 	backend, err := NewTestEthBackend(privateKey, types.GenesisAlloc{
 		addr: types.Account{
-			Balance: new(big.Int).Mul(big.NewInt(1000), ethtypes.Kether),
+			Balance: new(big.Int).Mul(big.NewInt(1000), big.NewInt(0).Exp(big.NewInt(10), big.NewInt(18), nil)),
 		},
 	}, tmpDataDir)
 	if err != nil {
