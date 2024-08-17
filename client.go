@@ -22,7 +22,7 @@ import (
 type Client struct {
 	*ethclient.Client
 	rpcClient *rpc.Client
-	nm        NonceManager
+	NonceManager
 	msgBuffer int
 	Subscriber
 }
@@ -50,11 +50,11 @@ func Dial(rawurl string) (*Client, error) {
 	}
 
 	return &Client{
-		Client:     c,
-		rpcClient:  rpcClient,
-		nm:         nm,
-		msgBuffer:  DefaultMsgBuffer,
-		Subscriber: subscriber,
+		Client:       c,
+		rpcClient:    rpcClient,
+		msgBuffer:    DefaultMsgBuffer,
+		NonceManager: nm,
+		Subscriber:   subscriber,
 	}, nil
 }
 
@@ -72,11 +72,11 @@ func DialWithNonceManager(rawurl string, nm NonceManager) (*Client, error) {
 	}
 
 	return &Client{
-		Client:     c,
-		rpcClient:  rpcClient,
-		nm:         nm,
-		msgBuffer:  DefaultMsgBuffer,
-		Subscriber: subscriber,
+		Client:       c,
+		rpcClient:    rpcClient,
+		msgBuffer:    DefaultMsgBuffer,
+		NonceManager: nm,
+		Subscriber:   subscriber,
 	}, nil
 }
 
@@ -94,11 +94,11 @@ func NewClient(c *rpc.Client) (*Client, error) {
 	}
 
 	return &Client{
-		Client:     ethc,
-		rpcClient:  c,
-		nm:         nm,
-		msgBuffer:  DefaultMsgBuffer,
-		Subscriber: subscriber,
+		Client:       ethc,
+		rpcClient:    c,
+		msgBuffer:    DefaultMsgBuffer,
+		NonceManager: nm,
+		Subscriber:   subscriber,
 	}, nil
 }
 
@@ -112,7 +112,7 @@ func (c *Client) RawClient() *ethclient.Client {
 }
 
 func (c *Client) SetNonceManager(nm NonceManager) {
-	c.nm = nm
+	c.NonceManager = nm
 }
 
 func (c *Client) SetMsgBuffer(buffer int) {
@@ -284,7 +284,7 @@ func (c *Client) NewTransaction(ctx context.Context, msg ethereum.CallMsg) (*typ
 		}
 	}
 
-	nonce, err := c.nm.PendingNonceAt(ctx, msg.From)
+	nonce, err := c.PendingNonceAt(ctx, msg.From)
 	if err != nil {
 		return nil, err
 	}
@@ -292,6 +292,10 @@ func (c *Client) NewTransaction(ctx context.Context, msg ethereum.CallMsg) (*typ
 	tx := types.NewTransaction(nonce, *msg.To, msg.Value, msg.Gas, msg.GasPrice, msg.Data)
 
 	return tx, nil
+}
+
+func (c *Client) PendingNonceAt(ctx context.Context, account common.Address) (uint64, error) {
+	return c.NonceManager.PendingNonceAt(ctx, account)
 }
 
 func (c *Client) WaitTxReceipt(txHash common.Hash, confirmations uint64, timeout time.Duration) (*types.Receipt, bool) {
@@ -327,7 +331,7 @@ func (c *Client) MessageToTransactOpts(ctx context.Context, msg Message) (*bind.
 	}
 	msg.From = crypto.PubkeyToAddress(msg.PrivateKey.PublicKey)
 
-	nonce, err := c.nm.PendingNonceAt(ctx, msg.From)
+	nonce, err := c.PendingNonceAt(ctx, msg.From)
 	if err != nil {
 		return nil, err
 	}
