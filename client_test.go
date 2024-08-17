@@ -67,12 +67,13 @@ func TestBatchSendMsg(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
 	defer cancel()
 
-	mesgs := make(chan Message, 10)
-	txs, errs := client.BatchSendMsg(ctx, mesgs)
+	buffer := 1000
+	mesgsChan := make(chan Message, buffer)
+	msgRespChan := client.BatchSendMsg(ctx, mesgsChan, buffer)
 	go func() {
-		for i := 0; i < 5; i++ {
+		for i := 0; i < 2*buffer; i++ {
 			to := common.HexToAddress("0x06514D014e997bcd4A9381bF0C4Dc21bD32718D4")
-			mesgs <- Message{
+			mesgsChan <- Message{
 				PrivateKey: privateKey,
 				To:         &to,
 			}
@@ -80,16 +81,17 @@ func TestBatchSendMsg(t *testing.T) {
 		}
 
 		t.Log("Close send channel")
-		close(mesgs)
+		close(mesgsChan)
 	}()
 
-	for tx := range txs {
+	for resp := range msgRespChan {
+		tx := resp.Tx
+		err := resp.Err
 		var js []byte
 		if tx != nil {
 			js, _ = tx.MarshalJSON()
 		}
 
-		err := <-errs
 		log.Info("Get Transaction", "tx", string(js), "err", err)
 		assert.Equal(t, nil, err)
 	}
@@ -116,7 +118,7 @@ func TestCallContract(t *testing.T) {
 
 	t.Log("TestContract creation transaction", "txHex", txOfContractCreation.Hash().Hex(), "contract", contractAddr.Hex())
 
-	receipt, contains := client.WaitTxReceipt(txOfContractCreation.Hash(), 2, 5*time.Second)
+	_, contains := client.WaitTxReceipt(txOfContractCreation.Hash(), 2, 5*time.Second)
 	if !contains {
 		t.Fatalf("Deploy Contract err: %v", err)
 	}
@@ -159,10 +161,8 @@ func TestCallContract(t *testing.T) {
 
 	t.Log("contractCallTx send sucessul", "txHash", contractCallTx.Hash().Hex())
 
-	receipt, contains = client.WaitTxReceipt(contractCallTx.Hash(), 2, 20*time.Second)
+	_, contains = client.WaitTxReceipt(contractCallTx.Hash(), 2, 20*time.Second)
 	assert.Equal(t, true, contains)
-
-	t.Log("Receipt", "status", receipt.Status)
 
 	counter, err := contract.Counter(nil)
 	if err != nil {
@@ -192,7 +192,7 @@ func TestContractRevert(t *testing.T) {
 
 	t.Log("TestContract creation transaction", "txHex", txOfContractCreation.Hash().Hex(), "contract", contractAddr.Hex())
 
-	receipt, contains := client.WaitTxReceipt(txOfContractCreation.Hash(), 2, 5*time.Second)
+	_, contains := client.WaitTxReceipt(txOfContractCreation.Hash(), 2, 5*time.Second)
 	assert.Equal(t, true, contains)
 
 	// Call contract method `testFunc1` id -> 0x88655d98
@@ -212,7 +212,7 @@ func TestContractRevert(t *testing.T) {
 		t.Fatalf("Send single Message, err: %v", err)
 	}
 
-	receipt, contains = client.WaitTxReceipt(contractCallTx.Hash(), 1, 2*time.Second)
+	receipt, contains := client.WaitTxReceipt(contractCallTx.Hash(), 1, 2*time.Second)
 	assert.Equal(t, true, contains)
 	assert.NotNil(t, receipt)
 	assert.Equal(t, types.ReceiptStatusFailed, receipt.Status)

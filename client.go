@@ -93,24 +93,30 @@ type Message struct {
 	AccessList types.AccessList // EIP-2930 access list.
 }
 
+type MessageResponse struct {
+	Tx  *types.Transaction
+	Err error
+}
+
 func (c *Client) NewMethodData(a abi.ABI, methodName string, args ...interface{}) ([]byte, error) {
 	return a.Pack(methodName, args...)
 }
 
-func (c *Client) BatchSendMsg(ctx context.Context, msgs <-chan Message) (<-chan *types.Transaction, <-chan error) {
-	txs := make(chan *types.Transaction, 10)
-	errs := make(chan error, 10)
+func (c *Client) BatchSendMsg(ctx context.Context, msgs <-chan Message, buffer int) <-chan MessageResponse {
+	msgResChan := make(chan MessageResponse, buffer)
 	go func() {
 		for msg := range msgs {
 			tx, err := c.SendMsg(ctx, msg)
-			txs <- tx
-			errs <- err
+			msgResChan <- MessageResponse{
+				Tx:  tx,
+				Err: err,
+			}
 		}
 
-		close(txs)
-		close(errs)
+		close(msgResChan)
 	}()
-	return txs, errs
+
+	return msgResChan
 }
 
 func (c *Client) CallMsg(ctx context.Context, msg Message, blockNumber *big.Int) (returnData []byte, err error) {
@@ -169,7 +175,7 @@ func (c *Client) SendMsg(ctx context.Context, msg Message) (*types.Transaction, 
 
 	chainID, err := c.rawClient.ChainID(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("Get Chain ID err: %v", err)
+		return nil, fmt.Errorf("get Chain ID err: %v", err)
 	}
 
 	signedTx, err := types.SignTx(tx, types.NewEIP2930Signer(chainID), msg.PrivateKey)
