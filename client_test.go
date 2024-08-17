@@ -10,6 +10,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/google/uuid"
 	"github.com/ivanzz/ethclient/contracts"
 	"github.com/stretchr/testify/assert"
 )
@@ -94,6 +95,98 @@ func TestBatchSendMsg(t *testing.T) {
 
 		log.Info("Get Transaction", "tx", string(js), "err", err)
 		assert.Equal(t, nil, err)
+	}
+	t.Log("Exit")
+}
+
+func Test_BatchSendMsg_RandomlyReverted(t *testing.T) {
+	log.SetDefault(log.NewLogger(log.DiscardHandler()))
+	// client := newTestClient(t)
+	// client, err := Dial("https://sepolia.base.org")
+	client, err := Dial("http://localhost:8545")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
+	defer cancel()
+
+	// Deploy Test contract.
+	contractAddr, txOfContractCreation, _, err := deployTestContract(t, ctx, client)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Log("TestContract creation transaction", "txHex", txOfContractCreation.Hash().Hex(), "contract", contractAddr.Hex())
+
+	_, contains := client.WaitTxReceipt(txOfContractCreation.Hash(), 2, 5*time.Second)
+	assert.Equal(t, true, contains)
+
+	wantErrMap := make(map[uuid.UUID]bool, 0)
+
+	buffer := 1000
+	mesgsChan := make(chan Message, buffer)
+	msgRespChan := client.BatchSendMsg(ctx, mesgsChan, buffer)
+	go func() {
+		contractAbi := contracts.GetTestContractABI()
+
+		for i := 0; i < 2*buffer; i++ {
+			number, _ := client.rawClient.BlockNumber(context.Background())
+			data, err := client.NewMethodData(contractAbi, "testRandomlyReverted")
+			assert.Equal(t, nil, err)
+
+			to := contractAddr
+			msg := FillMessage(
+				&Message{
+					PrivateKey: privateKey,
+					To:         &to,
+					Data:       data,
+					Gas:        1000000,
+				},
+			)
+			mesgsChan <- *msg
+			wantErrMap[msg.Id] = number%4 == 0
+
+			t.Logf("Write MSG to channel, block: %v, blockMod: %v, msgId: %v", number, number%4, msg.Id.String())
+		}
+
+		t.Log("Close send channel")
+		close(mesgsChan)
+	}()
+
+	for resp := range msgRespChan {
+		tx := resp.Tx
+		err := resp.Err
+
+		// wantErr := false
+		// if wantErr {
+		// 	assert.NotNil(t, err)
+		// } else {
+		// 	assert.Nil(t, err)
+		// }
+
+		if tx == nil {
+			continue
+		}
+
+		js, _ := tx.MarshalJSON()
+
+		log.Info("Get Transaction", "tx", string(js), "err", err)
+		receipt, confirmed := client.WaitTxReceipt(tx.Hash(), 1, 4*time.Second)
+
+		if !assert.True(t, confirmed) {
+			t.Fatal("Confirmation failed")
+		}
+
+		wantExecutionFail := receipt.BlockNumber.Int64()%4 == 0
+		if wantExecutionFail {
+			assert.Equal(t, types.ReceiptStatusFailed, receipt.Status,
+				"id=%v block=%v blockMod=%v", resp.Id.String(), receipt.BlockNumber.Int64(), receipt.BlockNumber.Int64()%4)
+		} else {
+			assert.Equal(t, types.ReceiptStatusSuccessful, receipt.Status,
+				"id=%v block=%v blockMod=%v", resp.Id.String(), receipt.BlockNumber.Int64(), receipt.BlockNumber.Int64()%4)
+		}
 	}
 	t.Log("Exit")
 }

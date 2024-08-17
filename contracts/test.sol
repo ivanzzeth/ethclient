@@ -19,7 +19,7 @@ contract Test {
         }
     }
 
-    function testControlledReverted() public view {
+    function testRandomlyReverted() public view {
         if (block.number % 4 == 0) {
             revert("test reverted");
         }

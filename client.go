@@ -16,6 +16,7 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rpc"
+	"github.com/google/uuid"
 )
 
 type Client struct {
@@ -82,6 +83,7 @@ func (c *Client) RawClient() *ethclient.Client {
 }
 
 type Message struct {
+	Id         uuid.UUID
 	From       common.Address    // the sender of the 'transaction'
 	PrivateKey *ecdsa.PrivateKey // overwrite From if not nil
 	To         *common.Address   // the destination contract (nil for contract creation)
@@ -93,7 +95,13 @@ type Message struct {
 	AccessList types.AccessList // EIP-2930 access list.
 }
 
+func FillMessage(msg *Message) *Message {
+	msg.Id, _ = uuid.NewUUID()
+	return msg
+}
+
 type MessageResponse struct {
+	Id  uuid.UUID
 	Tx  *types.Transaction
 	Err error
 }
@@ -108,6 +116,7 @@ func (c *Client) BatchSendMsg(ctx context.Context, msgs <-chan Message, buffer i
 		for msg := range msgs {
 			tx, err := c.SendMsg(ctx, msg)
 			msgResChan <- MessageResponse{
+				Id:  msg.Id,
 				Tx:  tx,
 				Err: err,
 			}
