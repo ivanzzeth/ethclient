@@ -27,10 +27,10 @@ var (
 )
 
 // ContractsABI is the input ABI used to generate the binding from.
-const ContractsABI = "[{\"anonymous\":false,\"inputs\":[{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"counter\",\"type\":\"uint256\"}],\"name\":\"CounterUpdated\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":false,\"internalType\":\"string\",\"name\":\"arg1\",\"type\":\"string\"},{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"arg2\",\"type\":\"uint256\"},{\"indexed\":false,\"internalType\":\"bytes\",\"name\":\"arg3\",\"type\":\"bytes\"}],\"name\":\"FuncEvent1\",\"type\":\"event\"},{\"inputs\":[],\"name\":\"counter\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"string\",\"name\":\"arg1\",\"type\":\"string\"},{\"internalType\":\"uint256\",\"name\":\"arg2\",\"type\":\"uint256\"},{\"internalType\":\"bytes\",\"name\":\"arg3\",\"type\":\"bytes\"}],\"name\":\"testFunc1\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"testReverted\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"}]"
+const ContractsABI = "[{\"anonymous\":false,\"inputs\":[{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"counter\",\"type\":\"uint256\"}],\"name\":\"CounterUpdated\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":false,\"internalType\":\"string\",\"name\":\"arg1\",\"type\":\"string\"},{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"arg2\",\"type\":\"uint256\"},{\"indexed\":false,\"internalType\":\"bytes\",\"name\":\"arg3\",\"type\":\"bytes\"}],\"name\":\"FuncEvent1\",\"type\":\"event\"},{\"inputs\":[],\"name\":\"counter\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"testControlledReverted\",\"outputs\":[],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"string\",\"name\":\"arg1\",\"type\":\"string\"},{\"internalType\":\"uint256\",\"name\":\"arg2\",\"type\":\"uint256\"},{\"internalType\":\"bytes\",\"name\":\"arg3\",\"type\":\"bytes\"}],\"name\":\"testFunc1\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"bool\",\"name\":\"r\",\"type\":\"bool\"}],\"name\":\"testReverted\",\"outputs\":[],\"stateMutability\":\"pure\",\"type\":\"function\"}]"
 
 // ContractsBin is the compiled bytecode used for deploying new contracts.
-var ContractsBin = "0x608060405234801561001057600080fd5b506103d3806100206000396000f3fe608060405234801561001057600080fd5b50600436106100415760003560e01c806361bc221a146100465780636c6dd6031461006457806388655d981461006e575b600080fd5b61004e6101ca565b6040518082815260200191505060405180910390f35b61006c6101d0565b005b6101c86004803603606081101561008457600080fd5b81019080803590602001906401000000008111156100a157600080fd5b8201836020820111156100b357600080fd5b803590602001918460018302840111640100000000831117156100d557600080fd5b91908080601f016020809104026020016040519081016040528093929190818152602001838380828437600081840152601f19601f820116905080830192505050505050509192919290803590602001909291908035906020019064010000000081111561014257600080fd5b82018360208201111561015457600080fd5b8035906020019184600183028401116401000000008311171561017657600080fd5b91908080601f016020809104026020016040519081016040528093929190818152602001838380828437600081840152601f19601f82011690508083019250505050505050919291929050505061023e565b005b60005481565b6040517f08c379a000000000000000000000000000000000000000000000000000000000815260040180806020018281038252600d8152602001807f746573742072657665727465640000000000000000000000000000000000000081525060200191505060405180910390fd5b7fee7ebd5ac9177b3cfe282c440d0220335dc60bc4472338132f06af7b4b9432fc838383604051808060200184815260200180602001838103835286818151815260200191508051906020019080838360005b838110156102ac578082015181840152602081019050610291565b50505050905090810190601f1680156102d95780820380516001836020036101000a031916815260200191505b50838103825284818151815260200191508051906020019080838360005b838110156103125780820151818401526020810190506102f7565b50505050905090810190601f16801561033f5780820380516001836020036101000a031916815260200191505b509550505050505060405180910390a1600160008082825401925050819055507f4785d80d2593e2cb7a3331d31eb5106408bdde2aab0db9e9b616b036a1b6039d6000546040518082815260200191505060405180910390a150505056fea26469706673582212200a605c4881a6c7323cfd00843e81261800bb5015a497ee47a7d92a78d68c252364736f6c63430007060033"
+var ContractsBin = "0x608060405234801561001057600080fd5b506107d3806100206000396000f3fe608060405234801561001057600080fd5b506004361061004c5760003560e01c806325e25eed1461005157806325e9af121461006d57806361bc221a1461007757806388655d9814610095575b600080fd5b61006b6004803603810190610066919061022b565b6100b1565b005b6100756100f5565b005b61007f610147565b60405161008c9190610271565b60405180910390f35b6100af60048036038101906100aa919061049f565b61014d565b005b80156100f2576040517f08c379a00000000000000000000000000000000000000000000000000000000081526004016100e990610587565b60405180910390fd5b50565b600060044361010491906105d6565b1415610145576040517f08c379a000000000000000000000000000000000000000000000000000000000815260040161013c90610587565b60405180910390fd5b565b60005481565b7fee7ebd5ac9177b3cfe282c440d0220335dc60bc4472338132f06af7b4b9432fc838383604051610180939291906106d3565b60405180910390a1600160008082825461019a9190610747565b925050819055507f4785d80d2593e2cb7a3331d31eb5106408bdde2aab0db9e9b616b036a1b6039d6000546040516101d29190610271565b60405180910390a1505050565b6000604051905090565b600080fd5b600080fd5b60008115159050919050565b610208816101f3565b811461021357600080fd5b50565b600081359050610225816101ff565b92915050565b600060208284031215610241576102406101e9565b5b600061024f84828501610216565b91505092915050565b6000819050919050565b61026b81610258565b82525050565b60006020820190506102866000830184610262565b92915050565b600080fd5b600080fd5b6000601f19601f8301169050919050565b7f4e487b7100000000000000000000000000000000000000000000000000000000600052604160045260246000fd5b6102df82610296565b810181811067ffffffffffffffff821117156102fe576102fd6102a7565b5b80604052505050565b60006103116101df565b905061031d82826102d6565b919050565b600067ffffffffffffffff82111561033d5761033c6102a7565b5b61034682610296565b9050602081019050919050565b82818337600083830152505050565b600061037561037084610322565b610307565b90508281526020810184848401111561039157610390610291565b5b61039c848285610353565b509392505050565b600082601f8301126103b9576103b861028c565b5b81356103c9848260208601610362565b91505092915050565b6103db81610258565b81146103e657600080fd5b50565b6000813590506103f8816103d2565b92915050565b600067ffffffffffffffff821115610419576104186102a7565b5b61042282610296565b9050602081019050919050565b600061044261043d846103fe565b610307565b90508281526020810184848401111561045e5761045d610291565b5b610469848285610353565b509392505050565b600082601f8301126104865761048561028c565b5b813561049684826020860161042f565b91505092915050565b6000806000606084860312156104b8576104b76101e9565b5b600084013567ffffffffffffffff8111156104d6576104d56101ee565b5b6104e2868287016103a4565b93505060206104f3868287016103e9565b925050604084013567ffffffffffffffff811115610514576105136101ee565b5b61052086828701610471565b9150509250925092565b600082825260208201905092915050565b7f7465737420726576657274656400000000000000000000000000000000000000600082015250565b6000610571600d8361052a565b915061057c8261053b565b602082019050919050565b600060208201905081810360008301526105a081610564565b9050919050565b7f4e487b7100000000000000000000000000000000000000000000000000000000600052601260045260246000fd5b60006105e182610258565b91506105ec83610258565b9250826105fc576105fb6105a7565b5b828206905092915050565b600081519050919050565b60005b83811015610630578082015181840152602081019050610615565b8381111561063f576000848401525b50505050565b600061065082610607565b61065a818561052a565b935061066a818560208601610612565b61067381610296565b840191505092915050565b600081519050919050565b600082825260208201905092915050565b60006106a58261067e565b6106af8185610689565b93506106bf818560208601610612565b6106c881610296565b840191505092915050565b600060608201905081810360008301526106ed8186610645565b90506106fc6020830185610262565b818103604083015261070e818461069a565b9050949350505050565b7f4e487b7100000000000000000000000000000000000000000000000000000000600052601160045260246000fd5b600061075282610258565b915061075d83610258565b9250827fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0382111561079257610791610718565b5b82820190509291505056fea26469706673582212204f10559557cf5697d5077c65f6f3fd9f6919995de2b1b9fbd7aaa3915099edf564736f6c634300080c0033"
 
 // DeployContracts deploys a new Ethereum contract, binding an instance of Contracts to it.
 func DeployContracts(auth *bind.TransactOpts, backend bind.ContractBackend) (common.Address, *types.Transaction, *Contracts, error) {
@@ -219,6 +219,64 @@ func (_Contracts *ContractsCallerSession) Counter() (*big.Int, error) {
 	return _Contracts.Contract.Counter(&_Contracts.CallOpts)
 }
 
+// TestControlledReverted is a free data retrieval call binding the contract method 0x25e9af12.
+//
+// Solidity: function testControlledReverted() view returns()
+func (_Contracts *ContractsCaller) TestControlledReverted(opts *bind.CallOpts) error {
+	var out []interface{}
+	err := _Contracts.contract.Call(opts, &out, "testControlledReverted")
+
+	if err != nil {
+		return err
+	}
+
+	return err
+
+}
+
+// TestControlledReverted is a free data retrieval call binding the contract method 0x25e9af12.
+//
+// Solidity: function testControlledReverted() view returns()
+func (_Contracts *ContractsSession) TestControlledReverted() error {
+	return _Contracts.Contract.TestControlledReverted(&_Contracts.CallOpts)
+}
+
+// TestControlledReverted is a free data retrieval call binding the contract method 0x25e9af12.
+//
+// Solidity: function testControlledReverted() view returns()
+func (_Contracts *ContractsCallerSession) TestControlledReverted() error {
+	return _Contracts.Contract.TestControlledReverted(&_Contracts.CallOpts)
+}
+
+// TestReverted is a free data retrieval call binding the contract method 0x25e25eed.
+//
+// Solidity: function testReverted(bool r) pure returns()
+func (_Contracts *ContractsCaller) TestReverted(opts *bind.CallOpts, r bool) error {
+	var out []interface{}
+	err := _Contracts.contract.Call(opts, &out, "testReverted", r)
+
+	if err != nil {
+		return err
+	}
+
+	return err
+
+}
+
+// TestReverted is a free data retrieval call binding the contract method 0x25e25eed.
+//
+// Solidity: function testReverted(bool r) pure returns()
+func (_Contracts *ContractsSession) TestReverted(r bool) error {
+	return _Contracts.Contract.TestReverted(&_Contracts.CallOpts, r)
+}
+
+// TestReverted is a free data retrieval call binding the contract method 0x25e25eed.
+//
+// Solidity: function testReverted(bool r) pure returns()
+func (_Contracts *ContractsCallerSession) TestReverted(r bool) error {
+	return _Contracts.Contract.TestReverted(&_Contracts.CallOpts, r)
+}
+
 // TestFunc1 is a paid mutator transaction binding the contract method 0x88655d98.
 //
 // Solidity: function testFunc1(string arg1, uint256 arg2, bytes arg3) returns()
@@ -238,27 +296,6 @@ func (_Contracts *ContractsSession) TestFunc1(arg1 string, arg2 *big.Int, arg3 [
 // Solidity: function testFunc1(string arg1, uint256 arg2, bytes arg3) returns()
 func (_Contracts *ContractsTransactorSession) TestFunc1(arg1 string, arg2 *big.Int, arg3 []byte) (*types.Transaction, error) {
 	return _Contracts.Contract.TestFunc1(&_Contracts.TransactOpts, arg1, arg2, arg3)
-}
-
-// TestReverted is a paid mutator transaction binding the contract method 0x6c6dd603.
-//
-// Solidity: function testReverted() returns()
-func (_Contracts *ContractsTransactor) TestReverted(opts *bind.TransactOpts) (*types.Transaction, error) {
-	return _Contracts.contract.Transact(opts, "testReverted")
-}
-
-// TestReverted is a paid mutator transaction binding the contract method 0x6c6dd603.
-//
-// Solidity: function testReverted() returns()
-func (_Contracts *ContractsSession) TestReverted() (*types.Transaction, error) {
-	return _Contracts.Contract.TestReverted(&_Contracts.TransactOpts)
-}
-
-// TestReverted is a paid mutator transaction binding the contract method 0x6c6dd603.
-//
-// Solidity: function testReverted() returns()
-func (_Contracts *ContractsTransactorSession) TestReverted() (*types.Transaction, error) {
-	return _Contracts.Contract.TestReverted(&_Contracts.TransactOpts)
 }
 
 // ContractsCounterUpdatedIterator is returned from FilterCounterUpdated and is used to iterate over the raw logs and unpacked data for CounterUpdated events raised by the Contracts contract.

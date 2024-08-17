@@ -197,7 +197,7 @@ func TestContractRevert(t *testing.T) {
 
 	// Call contract method `testFunc1` id -> 0x88655d98
 	contractAbi := contracts.GetTestContractABI()
-	data, err := client.NewMethodData(contractAbi, "testReverted")
+	data, err := client.NewMethodData(contractAbi, "testReverted", true)
 	assert.Equal(t, nil, err)
 
 	// Send successful, but executation failed.
@@ -212,7 +212,7 @@ func TestContractRevert(t *testing.T) {
 		t.Fatalf("Send single Message, err: %v", err)
 	}
 
-	receipt, contains := client.WaitTxReceipt(contractCallTx.Hash(), 1, 2*time.Second)
+	receipt, contains := client.WaitTxReceipt(contractCallTx.Hash(), 1, 3*time.Second)
 	assert.Equal(t, true, contains)
 	assert.NotNil(t, receipt)
 	assert.Equal(t, types.ReceiptStatusFailed, receipt.Status)

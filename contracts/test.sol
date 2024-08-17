@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: UNLICENSED
-pragma solidity >=0.7.0;
+pragma solidity >=0.8.0;
 
 contract Test {
     uint256 public counter;
@@ -13,7 +13,15 @@ contract Test {
         emit CounterUpdated(counter);
     }
 
-    function testReverted() public {
-        revert("test reverted");
+    function testReverted(bool r) public pure {
+        if (r) {
+            revert("test reverted");
+        }
+    }
+
+    function testControlledReverted() public view {
+        if (block.number % 4 == 0) {
+            revert("test reverted");
+        }
     }
 }
