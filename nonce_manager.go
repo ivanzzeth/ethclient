@@ -18,7 +18,7 @@ type SimpleNonceManager struct {
 	client   *ethclient.Client
 }
 
-func NewNonceManager(client *ethclient.Client) (*SimpleNonceManager, error) {
+func NewSimpleNonceManager(client *ethclient.Client) (*SimpleNonceManager, error) {
 	return &SimpleNonceManager{
 		nonceMap: make(map[common.Address]uint64),
 		client:   client,
