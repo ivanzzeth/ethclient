@@ -23,8 +23,13 @@ type Client struct {
 	*ethclient.Client
 	rpcClient *rpc.Client
 	nm        NonceManager
+	msgBuffer int
 	Subscriber
 }
+
+const (
+	DefaultMsgBuffer = 10
+)
 
 func Dial(rawurl string) (*Client, error) {
 	rpcClient, err := rpc.Dial(rawurl)
@@ -48,6 +53,7 @@ func Dial(rawurl string) (*Client, error) {
 		Client:     c,
 		rpcClient:  rpcClient,
 		nm:         nm,
+		msgBuffer:  DefaultMsgBuffer,
 		Subscriber: subscriber,
 	}, nil
 }
@@ -69,6 +75,7 @@ func DialWithNonceManager(rawurl string, nm NonceManager) (*Client, error) {
 		Client:     c,
 		rpcClient:  rpcClient,
 		nm:         nm,
+		msgBuffer:  DefaultMsgBuffer,
 		Subscriber: subscriber,
 	}, nil
 }
@@ -90,6 +97,7 @@ func NewClient(c *rpc.Client) (*Client, error) {
 		Client:     ethc,
 		rpcClient:  c,
 		nm:         nm,
+		msgBuffer:  DefaultMsgBuffer,
 		Subscriber: subscriber,
 	}, nil
 }
@@ -98,9 +106,17 @@ func (c *Client) Close() {
 	c.Client.Close()
 }
 
-// RawClient returns ethclient
+// RawClient returns underlying ethclient
 func (c *Client) RawClient() *ethclient.Client {
 	return c.Client
+}
+
+func (c *Client) SetNonceManager(nm NonceManager) {
+	c.nm = nm
+}
+
+func (c *Client) SetMsgBuffer(buffer int) {
+	c.msgBuffer = buffer
 }
 
 type Message struct {
@@ -116,23 +132,44 @@ type Message struct {
 	AccessList types.AccessList // EIP-2930 access list.
 }
 
-func FillMessage(msg *Message) *Message {
+func AssignMessageId(msg *Message) *Message {
 	msg.Id, _ = uuid.NewUUID()
 	return msg
 }
 
 type MessageResponse struct {
-	Id  uuid.UUID
-	Tx  *types.Transaction
-	Err error
+	Id         uuid.UUID
+	Tx         *types.Transaction
+	ReturnData []byte // not nil if using SafeBatchSendMsg and no err
+	Err        error
 }
 
 func (c *Client) NewMethodData(a abi.ABI, methodName string, args ...interface{}) ([]byte, error) {
 	return a.Pack(methodName, args...)
 }
 
-func (c *Client) BatchSendMsg(ctx context.Context, msgs <-chan Message, buffer int) <-chan MessageResponse {
-	msgResChan := make(chan MessageResponse, buffer)
+func (c *Client) SafeBatchSendMsg(ctx context.Context, msgs <-chan Message) <-chan MessageResponse {
+	msgResChan := make(chan MessageResponse, c.msgBuffer)
+	go func() {
+		for msg := range msgs {
+			tx, returnData, err := c.SafeSendMsg(ctx, msg)
+			// TODO: Release nonce...
+			msgResChan <- MessageResponse{
+				Id:         msg.Id,
+				Tx:         tx,
+				ReturnData: returnData,
+				Err:        err,
+			}
+		}
+
+		close(msgResChan)
+	}()
+
+	return msgResChan
+}
+
+func (c *Client) BatchSendMsg(ctx context.Context, msgs <-chan Message) <-chan MessageResponse {
+	msgResChan := make(chan MessageResponse, c.msgBuffer)
 	go func() {
 		for msg := range msgs {
 			tx, err := c.SendMsg(ctx, msg)

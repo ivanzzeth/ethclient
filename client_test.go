@@ -70,7 +70,7 @@ func TestBatchSendMsg(t *testing.T) {
 
 	buffer := 1000
 	mesgsChan := make(chan Message, buffer)
-	msgRespChan := client.BatchSendMsg(ctx, mesgsChan, buffer)
+	msgRespChan := client.BatchSendMsg(ctx, mesgsChan)
 	go func() {
 		for i := 0; i < 2*buffer; i++ {
 			to := common.HexToAddress("0x06514D014e997bcd4A9381bF0C4Dc21bD32718D4")
@@ -109,6 +109,10 @@ func Test_BatchSendMsg_RandomlyReverted(t *testing.T) {
 	}
 	defer client.Close()
 
+	buffer := 1000
+
+	client.SetMsgBuffer(buffer)
+
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
 	defer cancel()
 
@@ -125,9 +129,8 @@ func Test_BatchSendMsg_RandomlyReverted(t *testing.T) {
 
 	wantErrMap := make(map[uuid.UUID]bool, 0)
 
-	buffer := 1000
 	mesgsChan := make(chan Message, buffer)
-	msgRespChan := client.BatchSendMsg(ctx, mesgsChan, buffer)
+	msgRespChan := client.BatchSendMsg(ctx, mesgsChan)
 	go func() {
 		contractAbi := contracts.GetTestContractABI()
 
@@ -137,7 +140,7 @@ func Test_BatchSendMsg_RandomlyReverted(t *testing.T) {
 			assert.Equal(t, nil, err)
 
 			to := contractAddr
-			msg := FillMessage(
+			msg := AssignMessageId(
 				&Message{
 					PrivateKey: privateKey,
 					To:         &to,
