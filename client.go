@@ -20,7 +20,7 @@ import (
 )
 
 type Client struct {
-	rawClient *ethclient.Client
+	*ethclient.Client
 	rpcClient *rpc.Client
 	nm        NonceManager
 	Subscriber
@@ -45,7 +45,7 @@ func Dial(rawurl string) (*Client, error) {
 	}
 
 	return &Client{
-		rawClient:  c,
+		Client:     c,
 		rpcClient:  rpcClient,
 		nm:         nm,
 		Subscriber: subscriber,
@@ -66,7 +66,7 @@ func DialWithNonceManager(rawurl string, nm NonceManager) (*Client, error) {
 	}
 
 	return &Client{
-		rawClient:  c,
+		Client:     c,
 		rpcClient:  rpcClient,
 		nm:         nm,
 		Subscriber: subscriber,
@@ -87,7 +87,7 @@ func NewClient(c *rpc.Client) (*Client, error) {
 	}
 
 	return &Client{
-		rawClient:  ethc,
+		Client:     ethc,
 		rpcClient:  c,
 		nm:         nm,
 		Subscriber: subscriber,
@@ -95,12 +95,12 @@ func NewClient(c *rpc.Client) (*Client, error) {
 }
 
 func (c *Client) Close() {
-	c.rawClient.Close()
+	c.Client.Close()
 }
 
 // RawClient returns ethclient
 func (c *Client) RawClient() *ethclient.Client {
-	return c.rawClient
+	return c.Client
 }
 
 type Message struct {
@@ -164,7 +164,7 @@ func (c *Client) CallMsg(ctx context.Context, msg Message, blockNumber *big.Int)
 		AccessList: msg.AccessList,
 	}
 
-	return c.rawClient.CallContract(ctx, ethMesg, blockNumber)
+	return c.Client.CallContract(ctx, ethMesg, blockNumber)
 }
 
 func (c *Client) SafeSendMsg(ctx context.Context, msg Message) (*types.Transaction, []byte, error) {
@@ -203,7 +203,7 @@ func (c *Client) SendMsg(ctx context.Context, msg Message) (*types.Transaction, 
 		return nil, fmt.Errorf("NewTransaction err: %v", err)
 	}
 
-	chainID, err := c.rawClient.ChainID(ctx)
+	chainID, err := c.Client.ChainID(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("get Chain ID err: %v", err)
 	}
@@ -213,7 +213,7 @@ func (c *Client) SendMsg(ctx context.Context, msg Message) (*types.Transaction, 
 		return nil, fmt.Errorf("SignTx err: %v", err)
 	}
 
-	err = c.rawClient.SendTransaction(ctx, signedTx)
+	err = c.Client.SendTransaction(ctx, signedTx)
 	if err != nil {
 		return nil, fmt.Errorf("SendTransaction err: %v", err)
 	}
@@ -231,7 +231,7 @@ func (c *Client) NewTransaction(ctx context.Context, msg ethereum.CallMsg) (*typ
 	}
 
 	if msg.Gas == 0 {
-		gas, err := c.rawClient.EstimateGas(ctx, msg)
+		gas, err := c.Client.EstimateGas(ctx, msg)
 		if err != nil {
 			return nil, err
 		}
@@ -241,7 +241,7 @@ func (c *Client) NewTransaction(ctx context.Context, msg ethereum.CallMsg) (*typ
 
 	if msg.GasPrice == nil || msg.GasPrice.Uint64() == 0 {
 		var err error
-		msg.GasPrice, err = c.rawClient.SuggestGasPrice(ctx)
+		msg.GasPrice, err = c.Client.SuggestGasPrice(ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -266,12 +266,12 @@ func (c *Client) WaitTxReceipt(txHash common.Hash, confirmations uint64, timeout
 			return nil, false
 		}
 
-		receipt, err := c.rawClient.TransactionReceipt(context.Background(), txHash)
+		receipt, err := c.Client.TransactionReceipt(context.Background(), txHash)
 		if err != nil {
 			continue
 		}
 
-		block, err := c.rawClient.BlockNumber(context.Background())
+		block, err := c.Client.BlockNumber(context.Background())
 		if err != nil {
 			continue
 		}
@@ -295,7 +295,7 @@ func (c *Client) MessageToTransactOpts(ctx context.Context, msg Message) (*bind.
 		return nil, err
 	}
 
-	chainID, err := c.rawClient.ChainID(ctx)
+	chainID, err := c.Client.ChainID(ctx)
 	if err != nil {
 		return nil, err
 	}

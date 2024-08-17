@@ -132,7 +132,7 @@ func Test_BatchSendMsg_RandomlyReverted(t *testing.T) {
 		contractAbi := contracts.GetTestContractABI()
 
 		for i := 0; i < 2*buffer; i++ {
-			number, _ := client.rawClient.BlockNumber(context.Background())
+			number, _ := client.BlockNumber(context.Background())
 			data, err := client.NewMethodData(contractAbi, "testRandomlyReverted")
 			assert.Equal(t, nil, err)
 
