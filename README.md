@@ -87,5 +87,14 @@ func main() {
 	}
 }
 ```
+
+## Setup local node for testing
+
+you should install foundry before running the script below:
+
+```bash
+./run_local_node.sh
+```
+
 ## License
 The ethclient library is licensed under the [GNU General Public License v3.0](https://www.gnu.org/licenses/gpl-3.0.en.html), also included in our repository in the COPYING.LESSER file.

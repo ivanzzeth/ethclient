@@ -15,7 +15,7 @@ import (
 )
 
 var (
-	privateKey, _ = crypto.HexToECDSA("9a01f5c57e377e0239e6036b7b2d700454b760b2dab51390f1eeb2f64fe98b68")
+	privateKey, _ = crypto.HexToECDSA("ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80")
 	addr          = crypto.PubkeyToAddress(privateKey.PublicKey)
 )
 
@@ -57,8 +57,8 @@ func newTestClient(t *testing.T) *Client {
 func TestBatchSendMsg(t *testing.T) {
 	log.SetDefault(log.NewLogger(log.DiscardHandler()))
 	// client := newTestClient(t)
-	// client, err := Dial("http://localhost:8545")
-	client, err := Dial("https://sepolia.base.org")
+	// client, err := Dial("https://sepolia.base.org")
+	client, err := Dial("http://localhost:8545")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -98,7 +98,11 @@ func TestBatchSendMsg(t *testing.T) {
 
 func TestCallContract(t *testing.T) {
 	// log.SetDefault(log.NewLogger(log.DiscardHandler()))
-	client := newTestClient(t)
+	// client := newTestClient(t)
+	client, err := Dial("http://localhost:8545")
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer client.Close()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
@@ -112,12 +116,11 @@ func TestCallContract(t *testing.T) {
 
 	t.Log("TestContract creation transaction", "txHex", txOfContractCreation.Hash().Hex(), "contract", contractAddr.Hex())
 
-	contains, err := client.ConfirmTx(txOfContractCreation.Hash(), 2, 5*time.Second)
-	if err != nil {
+	receipt, contains := client.WaitTxReceipt(txOfContractCreation.Hash(), 2, 5*time.Second)
+	if !contains {
 		t.Fatalf("Deploy Contract err: %v", err)
 	}
-	blockNumber, _ := client.rawClient.BlockNumber(context.Background())
-	t.Log("blockNumber: ", blockNumber)
+
 	assert.Equal(t, true, contains)
 
 	// Call contract method `testFunc1` id -> 0x88655d98
@@ -156,16 +159,9 @@ func TestCallContract(t *testing.T) {
 
 	t.Log("contractCallTx send sucessul", "txHash", contractCallTx.Hash().Hex())
 
-	contains, err = client.ConfirmTx(contractCallTx.Hash(), 2, 20*time.Second)
-	if err != nil {
-		t.Fatal(err)
-	}
+	receipt, contains = client.WaitTxReceipt(contractCallTx.Hash(), 2, 20*time.Second)
 	assert.Equal(t, true, contains)
 
-	receipt, err := client.RawClient().TransactionReceipt(ctx, contractCallTx.Hash())
-	if err != nil {
-		t.Fatal(err)
-	}
 	t.Log("Receipt", "status", receipt.Status)
 
 	counter, err := contract.Counter(nil)
@@ -178,7 +174,11 @@ func TestCallContract(t *testing.T) {
 
 func TestContractRevert(t *testing.T) {
 	log.SetDefault(log.NewLogger(log.DiscardHandler()))
-	client := newTestClient(t)
+	// client := newTestClient(t)
+	client, err := Dial("http://localhost:8545")
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer client.Close()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
@@ -192,10 +192,7 @@ func TestContractRevert(t *testing.T) {
 
 	t.Log("TestContract creation transaction", "txHex", txOfContractCreation.Hash().Hex(), "contract", contractAddr.Hex())
 
-	contains, err := client.ConfirmTx(txOfContractCreation.Hash(), 2, 5*time.Second)
-	if err != nil {
-		t.Fatalf("Deploy Contract err: %v", err)
-	}
+	receipt, contains := client.WaitTxReceipt(txOfContractCreation.Hash(), 2, 5*time.Second)
 	assert.Equal(t, true, contains)
 
 	// Call contract method `testFunc1` id -> 0x88655d98
@@ -215,10 +212,8 @@ func TestContractRevert(t *testing.T) {
 		t.Fatalf("Send single Message, err: %v", err)
 	}
 
-	confirmed, _ := client.ConfirmTx(contractCallTx.Hash(), 1, 2*time.Second)
-	assert.Equal(t, true, confirmed)
-	receipt, err := client.rawClient.TransactionReceipt(ctx, contractCallTx.Hash())
-	assert.Equal(t, nil, err)
+	receipt, contains = client.WaitTxReceipt(contractCallTx.Hash(), 1, 2*time.Second)
+	assert.Equal(t, true, contains)
 	assert.NotNil(t, receipt)
 	assert.Equal(t, types.ReceiptStatusFailed, receipt.Status)
 

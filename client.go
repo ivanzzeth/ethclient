@@ -221,52 +221,27 @@ func (c *Client) NewTransaction(ctx context.Context, msg ethereum.CallMsg) (*typ
 	return tx, nil
 }
 
-func (c *Client) ConfirmTx(txHash common.Hash, n uint, timeout time.Duration) (bool, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
-
-	// Use SubscribeNewHead to confirm the signed transaction was contained in the new block.
-	headerChan := make(chan *types.Header)
-	err := c.SubscribeNewHead(ctx, headerChan)
-	if err != nil {
-		return false, err
-	}
-
-	var blockMinedTx *big.Int
+func (c *Client) WaitTxReceipt(txHash common.Hash, confirmations uint64, timeout time.Duration) (*types.Receipt, bool) {
+	startTime := time.Now()
 	for {
-		select {
-		case header := <-headerChan:
-			currBlock, err := c.rawClient.BlockByHash(ctx, header.Hash())
-			if err != nil {
-				return false, err
-			}
+		currTime := time.Now()
+		elapsedTime := currTime.Sub(startTime)
+		if elapsedTime >= timeout {
+			return nil, false
+		}
 
-			if blockMinedTx == nil {
-				// The tx is already mined at this block.
-				if currBlock.Transaction(txHash) != nil {
-					blockMinedTx = currBlock.Number()
-				}
-			} else {
-				// Reach n confirmations.
-				if target := new(big.Int).Add(blockMinedTx, big.NewInt(int64(n))); currBlock.Number().Cmp(target) >= 0 {
-					// Double check whether tx contains the block
-					block, err := c.rawClient.BlockByNumber(ctx, blockMinedTx)
-					if err != nil {
-						return false, err
-					}
+		receipt, err := c.rawClient.TransactionReceipt(context.Background(), txHash)
+		if err != nil {
+			continue
+		}
 
-					if block.Transaction(txHash) == nil {
-						return false, nil
-					}
+		block, err := c.rawClient.BlockNumber(context.Background())
+		if err != nil {
+			continue
+		}
 
-					log.Debug("Transaction reachs n confirmations",
-						"tx", txHash.Hex(), "block", blockMinedTx.Uint64(), "header", currBlock.NumberU64())
-					return true, nil
-				}
-			}
-		case <-ctx.Done():
-			// Not in chain
-			return false, nil
+		if block >= receipt.BlockNumber.Uint64()+confirmations {
+			return receipt, true
 		}
 	}
 }

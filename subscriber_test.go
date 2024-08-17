@@ -29,10 +29,7 @@ func TestSubscriber(t *testing.T) {
 
 	t.Log("TestContract creation transaction", "txHex", txOfContractCreation.Hash().Hex(), "contract", contractAddr.Hex())
 
-	contains, err := client.ConfirmTx(txOfContractCreation.Hash(), 2, 5*time.Second)
-	if err != nil {
-		t.Fatalf("Deploy Contract err: %v", err)
-	}
+	_, contains := client.WaitTxReceipt(txOfContractCreation.Hash(), 2, 5*time.Second)
 	assert.Equal(t, true, contains)
 
 	// Method args
@@ -51,10 +48,7 @@ func TestSubscriber(t *testing.T) {
 
 	t.Log("contractCallTx send sucessul", "txHash", contractCallTx.Hash().Hex())
 
-	contains, err = client.ConfirmTx(contractCallTx.Hash(), 2, 20*time.Second)
-	if err != nil {
-		t.Fatal(err)
-	}
+	_, contains = client.WaitTxReceipt(contractCallTx.Hash(), 2, 20*time.Second)
 	assert.Equal(t, true, contains)
 
 	// Subscribe logs
@@ -90,10 +84,8 @@ func TestSubscriber(t *testing.T) {
 
 	t.Log("contractCallTx send sucessul", "txHash", contractCallTx.Hash().Hex())
 
-	contains, err = client.ConfirmTx(contractCallTx.Hash(), 2, 20*time.Second)
-	if err != nil {
-		t.Fatal(err)
-	}
+	_, contains = client.WaitTxReceipt(contractCallTx.Hash(), 2, 20*time.Second)
+
 	assert.Equal(t, true, contains)
 	assert.Equal(t, 4, logCount)
 }

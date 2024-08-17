@@ -3,7 +3,7 @@ package ethclient
 import (
 	"crypto/ecdsa"
 	"fmt"
-	"math/big"
+	"time"
 
 	"github.com/ethereum/go-ethereum/accounts"
 	"github.com/ethereum/go-ethereum/accounts/external"
@@ -18,9 +18,12 @@ import (
 	"github.com/ethereum/go-ethereum/eth/downloader"
 	"github.com/ethereum/go-ethereum/eth/ethconfig"
 	"github.com/ethereum/go-ethereum/eth/tracers"
+	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/miner"
 	"github.com/ethereum/go-ethereum/node"
+	"github.com/ethereum/go-ethereum/triedb"
+	"github.com/ethereum/go-ethereum/triedb/pathdb"
 )
 
 func NewTestEthBackend(privateKey *ecdsa.PrivateKey, alloc types.GenesisAlloc, dataDir string) (*node.Node, error) {
@@ -45,6 +48,25 @@ func NewTestEthBackend(privateKey *ecdsa.PrivateKey, alloc types.GenesisAlloc, d
 		return nil, fmt.Errorf("can't create new node: %v", err)
 	}
 
+	// Setup genesis block
+	for _, name := range []string{"chaindata", "lightchaindata"} {
+		chaindb, err := stack.OpenDatabaseWithFreezer(name, 0, 0, "AncientName", "", false)
+		if err != nil {
+			return nil, fmt.Errorf("failed to open database: %v", err)
+		}
+		defer chaindb.Close()
+
+		cachePreimages := false
+		triedb := MakeTrieDatabase(chaindb, cachePreimages, false, genesis.IsVerkle())
+		defer triedb.Close()
+
+		_, hash, err := core.SetupGenesisBlock(chaindb, triedb, genesis)
+		if err != nil {
+			return nil, fmt.Errorf("failed to write genesis block: %v", err)
+		}
+		log.Info("Successfully wrote genesis state", "database", name, "hash", hash)
+	}
+
 	err = setAccountManagerBackends(&nodeConfig, stack.AccountManager(), stack.KeyStoreDir())
 	if err != nil {
 		return nil, fmt.Errorf("failed to set account manager backends: %v", err)
@@ -56,8 +78,9 @@ func NewTestEthBackend(privateKey *ecdsa.PrivateKey, alloc types.GenesisAlloc, d
 
 	// minerConfig := miner.DefaultConfig
 	minerConfig := miner.Config{}
+	minerConfig.Etherbase = etherbase
 	// minerConfig.PendingFeeRecipient = etherbase
-	minerConfig.GasPrice = big.NewInt(1)
+	// minerConfig.GasPrice = big.NewInt(1)
 	// Create Ethereum Service
 	config := &ethconfig.Config{
 		NetworkId: 1337,
@@ -68,11 +91,6 @@ func NewTestEthBackend(privateKey *ecdsa.PrivateKey, alloc types.GenesisAlloc, d
 
 	ethservice := RegisterEthService(stack, config)
 
-	// ethservice, err := eth.New(stack, config)
-	// if err != nil {
-	// 	return nil, fmt.Errorf("can't create new ethereum service: %v", err)
-	// }
-	// Import the test chain.
 	if err := stack.Start(); err != nil {
 		return nil, fmt.Errorf("can't start test node: %v", err)
 	}
@@ -83,6 +101,16 @@ func NewTestEthBackend(privateKey *ecdsa.PrivateKey, alloc types.GenesisAlloc, d
 	}
 
 	ethservice.SetSynced()
+
+	miner := ethservice.Miner()
+	miner.SetEtherbase(etherbase)
+	miner.Start()
+
+	time.Sleep(2 * time.Second)
+
+	if !miner.Mining() {
+		return nil, fmt.Errorf("miner not working")
+	}
 
 	return stack, nil
 }
@@ -98,12 +126,27 @@ func RegisterEthService(stack *node.Node, cfg *ethconfig.Config) *eth.Ethereum {
 	return backend
 }
 
+// MakeTrieDatabase constructs a trie database based on the configured scheme.
+func MakeTrieDatabase(disk ethdb.Database, preimage bool, readOnly bool, isVerkle bool) *triedb.Database {
+	config := &triedb.Config{
+		Preimages: preimage,
+		IsVerkle:  isVerkle,
+	}
+
+	if readOnly {
+		config.PathDB = pathdb.ReadOnly
+	} else {
+		config.PathDB = pathdb.Defaults
+	}
+	return triedb.NewDatabase(disk, config)
+}
+
 func saveMiner(stack *node.Node, minerPrivKey *ecdsa.PrivateKey) error {
 	var ks *keystore.KeyStore
 	if keystores := stack.AccountManager().Backends(keystore.KeyStoreType); len(keystores) > 0 {
 		ks = keystores[0].(*keystore.KeyStore)
 	} else {
-		return fmt.Errorf("No any keystores")
+		return fmt.Errorf("no any keystores")
 	}
 
 	passphrase := "123"
