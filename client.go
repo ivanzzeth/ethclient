@@ -22,7 +22,7 @@ import (
 type Client struct {
 	rawClient *ethclient.Client
 	rpcClient *rpc.Client
-	nm        *NonceManager
+	nm        NonceManager
 	Subscriber
 }
 

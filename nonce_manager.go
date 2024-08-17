@@ -8,20 +8,24 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 )
 
-type NonceManager struct {
+type NonceManager interface {
+	PendingNonceAt(ctx context.Context, account common.Address) (uint64, error)
+}
+
+type SimpleNonceManager struct {
 	nonceMap map[common.Address]uint64
 	lock     sync.Mutex
 	client   *ethclient.Client
 }
 
-func NewNonceManager(client *ethclient.Client) (*NonceManager, error) {
-	return &NonceManager{
+func NewNonceManager(client *ethclient.Client) (*SimpleNonceManager, error) {
+	return &SimpleNonceManager{
 		nonceMap: make(map[common.Address]uint64),
 		client:   client,
 	}, nil
 }
 
-func (nm *NonceManager) PendingNonceAt(ctx context.Context, account common.Address) (uint64, error) {
+func (nm *SimpleNonceManager) PendingNonceAt(ctx context.Context, account common.Address) (uint64, error) {
 	nm.lock.Lock()
 	defer nm.lock.Unlock()
 
