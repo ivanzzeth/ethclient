@@ -18,11 +18,18 @@ type SimpleNonceManager struct {
 	client   *ethclient.Client
 }
 
+var snm *SimpleNonceManager
+var snmOnce sync.Once
+
 func NewSimpleNonceManager(client *ethclient.Client) (*SimpleNonceManager, error) {
-	return &SimpleNonceManager{
-		nonceMap: make(map[common.Address]uint64),
-		client:   client,
-	}, nil
+	snmOnce.Do(func() {
+		snm = &SimpleNonceManager{
+			nonceMap: make(map[common.Address]uint64),
+			client:   client,
+		}
+	})
+
+	return snm, nil
 }
 
 func (nm *SimpleNonceManager) PendingNonceAt(ctx context.Context, account common.Address) (uint64, error) {
