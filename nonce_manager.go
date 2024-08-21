@@ -14,8 +14,9 @@ type NonceManager interface {
 
 type SimpleNonceManager struct {
 	nonceMap map[common.Address]uint64
-	lock     sync.Mutex
-	client   *ethclient.Client
+	lockMap  sync.Map
+	// lock     sync.Mutex
+	client *ethclient.Client
 }
 
 var snm *SimpleNonceManager
@@ -25,6 +26,7 @@ func NewSimpleNonceManager(client *ethclient.Client) (*SimpleNonceManager, error
 	snmOnce.Do(func() {
 		snm = &SimpleNonceManager{
 			nonceMap: make(map[common.Address]uint64),
+			lockMap:  sync.Map{},
 			client:   client,
 		}
 	})
@@ -32,9 +34,18 @@ func NewSimpleNonceManager(client *ethclient.Client) (*SimpleNonceManager, error
 	return snm, nil
 }
 
+func (nm *SimpleNonceManager) NonceLockFrom(from common.Address) *sync.Mutex {
+	lock, _ := nm.lockMap.LoadOrStore(from, &sync.Mutex{})
+	return lock.(*sync.Mutex)
+}
+
 func (nm *SimpleNonceManager) PendingNonceAt(ctx context.Context, account common.Address) (uint64, error) {
-	nm.lock.Lock()
-	defer nm.lock.Unlock()
+	// nm.lock.Lock()
+	// defer nm.lock.Unlock()
+
+	locker := nm.NonceLockFrom(account)
+	locker.Lock()
+	defer locker.Unlock()
 
 	var (
 		nonce uint64
@@ -43,7 +54,7 @@ func (nm *SimpleNonceManager) PendingNonceAt(ctx context.Context, account common
 
 	nonce, ok := nm.nonceMap[account]
 	if !ok {
-		nonce, err = nm.client.PendingNonceAt(ctx, account)
+		nonce, err = nm.client.NonceAt(ctx, account, nil)
 		if err != nil {
 			return 0, err
 		}
