@@ -96,7 +96,7 @@ func Test_BatchSendMsg_RandomlyReverted_WithRedis(t *testing.T) {
 	pool := goredis.NewPool(redisClient)
 
 	storage := nonce.NewRedisStorage(pool)
-	nm, err := nonce.NewSimpleNonceManager(client.Client, storage)
+	nm, err := nonce.NewSimpleManager(client.Client, storage)
 	if err != nil {
 		t.Fatal(err)
 	}

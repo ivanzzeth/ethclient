@@ -36,7 +36,7 @@ func Dial(rawurl string) (*Client, error) {
 
 	c := ethclient.NewClient(rpcClient)
 
-	nm, err := nonce.NewSimpleNonceManager(c, nonce.NewMemoryStorage())
+	nm, err := nonce.NewSimpleManager(c, nonce.NewMemoryStorage())
 	if err != nil {
 		return nil, err
 	}
@@ -80,7 +80,7 @@ func DialWithNonceManager(rawurl string, nm nonce.Manager) (*Client, error) {
 func NewClient(c *rpc.Client) (*Client, error) {
 	ethc := ethclient.NewClient(c)
 
-	nm, err := nonce.NewSimpleNonceManager(ethc, nonce.NewMemoryStorage())
+	nm, err := nonce.NewSimpleManager(ethc, nonce.NewMemoryStorage())
 	if err != nil {
 		return nil, err
 	}

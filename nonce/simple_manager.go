@@ -19,7 +19,7 @@ type SimpleManager struct {
 var snm *SimpleManager
 var snmOnce sync.Once
 
-func GetSimpleNonceManager(client *ethclient.Client, storage Storage) (*SimpleManager, error) {
+func GetSimpleManager(client *ethclient.Client, storage Storage) (*SimpleManager, error) {
 	snmOnce.Do(func() {
 		snm = &SimpleManager{
 			Storage: storage,
@@ -30,7 +30,7 @@ func GetSimpleNonceManager(client *ethclient.Client, storage Storage) (*SimpleMa
 	return snm, nil
 }
 
-func NewSimpleNonceManager(client *ethclient.Client, storage Storage) (*SimpleManager, error) {
+func NewSimpleManager(client *ethclient.Client, storage Storage) (*SimpleManager, error) {
 	return &SimpleManager{
 		Storage: storage,
 		client:  client,
