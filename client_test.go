@@ -11,8 +11,11 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/go-redsync/redsync/v4/redis/goredis/v9"
 	"github.com/google/uuid"
 	"github.com/ivanzz/ethclient/contracts"
+	"github.com/ivanzz/ethclient/nonce"
+	goredislib "github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -57,15 +60,85 @@ func newTestClient(t *testing.T) *Client {
 }
 
 func TestBatchSendMsg(t *testing.T) {
-	log.SetDefault(log.NewLogger(log.DiscardHandler()))
-	// client := newTestClient(t)
-	// client, err := Dial("https://sepolia.base.org")
 	client, err := Dial("http://localhost:8545")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer client.Close()
 
+	testBatchSendMsg(t, client)
+}
+
+func Test_BatchSendMsg_RandomlyReverted(t *testing.T) {
+	client, err := Dial("http://localhost:8545")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+
+	test_BatchSendMsg_RandomlyReverted(t, client)
+}
+
+func Test_BatchSendMsg_RandomlyReverted_WithRedis(t *testing.T) {
+	client, err := Dial("http://localhost:8545")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+
+	// Create a pool with go-redis (or redigo) which is the pool redisync will
+	// use while communicating with Redis. This can also be any pool that
+	// implements the `redis.Pool` interface.
+	redisClient := goredislib.NewClient(&goredislib.Options{
+		Addr:     "localhost:16379",
+		Password: "135683271d06e8",
+	})
+	pool := goredis.NewPool(redisClient)
+
+	storage := nonce.NewRedisStorage(pool)
+	nm, err := nonce.NewSimpleNonceManager(client.Client, storage)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	client.SetNonceManager(nm)
+
+	test_BatchSendMsg_RandomlyReverted(t, client)
+}
+
+func TestCallContract(t *testing.T) {
+	client, err := Dial("http://localhost:8545")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+
+	testCallContract(t, client)
+}
+
+func TestContractRevert(t *testing.T) {
+	log.SetDefault(log.NewLogger(log.DiscardHandler()))
+	// client := newTestClient(t)
+	client, err := Dial("http://localhost:8545")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+
+	testContractRevert(t, client)
+}
+
+func Test_CallContract_Concurrent(t *testing.T) {
+	client, err := Dial("http://localhost:8545")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+
+	test_CallContract_Concurrent(t, client)
+}
+
+func testBatchSendMsg(t *testing.T, client *Client) {
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
 	defer cancel()
 
@@ -100,16 +173,7 @@ func TestBatchSendMsg(t *testing.T) {
 	t.Log("Exit")
 }
 
-func Test_BatchSendMsg_RandomlyReverted(t *testing.T) {
-	log.SetDefault(log.NewLogger(log.DiscardHandler()))
-	// client := newTestClient(t)
-	// client, err := Dial("https://sepolia.base.org")
-	client, err := Dial("http://localhost:8545")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer client.Close()
-
+func test_BatchSendMsg_RandomlyReverted(t *testing.T, client *Client) {
 	buffer := 1000
 
 	client.SetMsgBuffer(buffer)
@@ -195,15 +259,7 @@ func Test_BatchSendMsg_RandomlyReverted(t *testing.T) {
 	t.Log("Exit")
 }
 
-func TestCallContract(t *testing.T) {
-	// log.SetDefault(log.NewLogger(log.DiscardHandler()))
-	// client := newTestClient(t)
-	client, err := Dial("http://localhost:8545")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer client.Close()
-
+func testCallContract(t *testing.T, client *Client) {
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
 	defer cancel()
 
@@ -269,15 +325,7 @@ func TestCallContract(t *testing.T) {
 	assert.Equal(t, uint64(1), counter.Uint64())
 }
 
-func TestContractRevert(t *testing.T) {
-	log.SetDefault(log.NewLogger(log.DiscardHandler()))
-	// client := newTestClient(t)
-	client, err := Dial("http://localhost:8545")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer client.Close()
-
+func testContractRevert(t *testing.T, client *Client) {
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
 	defer cancel()
 
@@ -337,15 +385,7 @@ func TestContractRevert(t *testing.T) {
 	assert.NotEqual(t, nil, err, "expect revert transaction")
 }
 
-func Test_CallContract_Concurrent(t *testing.T) {
-	// log.SetDefault(log.NewLogger(log.DiscardHandler()))
-	// client := newTestClient(t)
-	client, err := Dial("http://localhost:8545")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer client.Close()
-
+func test_CallContract_Concurrent(t *testing.T, client *Client) {
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
 	defer cancel()
 

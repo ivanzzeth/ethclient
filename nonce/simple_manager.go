@@ -19,15 +19,22 @@ type SimpleManager struct {
 var snm *SimpleManager
 var snmOnce sync.Once
 
-func NewSimpleNonceManager(client *ethclient.Client) (*SimpleManager, error) {
+func GetSimpleNonceManager(client *ethclient.Client, storage Storage) (*SimpleManager, error) {
 	snmOnce.Do(func() {
 		snm = &SimpleManager{
-			Storage: NewMemoryStorage(),
+			Storage: storage,
 			client:  client,
 		}
 	})
 
 	return snm, nil
+}
+
+func NewSimpleNonceManager(client *ethclient.Client, storage Storage) (*SimpleManager, error) {
+	return &SimpleManager{
+		Storage: storage,
+		client:  client,
+	}, nil
 }
 
 func (nm *SimpleManager) PendingNonceAt(ctx context.Context, account common.Address) (uint64, error) {
@@ -45,8 +52,13 @@ func (nm *SimpleManager) PendingNonceAt(ctx context.Context, account common.Addr
 		return 0, err
 	}
 
-	if nonce == 0 {
-		nonce, err = nm.client.NonceAt(ctx, account, nil)
+	nonceInLatest, err := nm.client.PendingNonceAt(ctx, account)
+	if err != nil {
+		return 0, err
+	}
+
+	if nonce == 0 || nonceInLatest > nonce {
+		nonce, err = nm.client.PendingNonceAt(ctx, account)
 		if err != nil {
 			return 0, err
 		}
