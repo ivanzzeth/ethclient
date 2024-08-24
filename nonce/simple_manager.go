@@ -12,9 +12,7 @@ import (
 var _ Manager = &SimpleManager{}
 
 type SimpleManager struct {
-	nonceMap map[common.Address]uint64
-	lockMap  sync.Map
-	// lock     sync.Mutex
+	Storage
 	client *ethclient.Client
 }
 
@@ -24,24 +22,15 @@ var snmOnce sync.Once
 func NewSimpleNonceManager(client *ethclient.Client) (*SimpleManager, error) {
 	snmOnce.Do(func() {
 		snm = &SimpleManager{
-			nonceMap: make(map[common.Address]uint64),
-			lockMap:  sync.Map{},
-			client:   client,
+			Storage: NewMemoryStorage(),
+			client:  client,
 		}
 	})
 
 	return snm, nil
 }
 
-func (nm *SimpleManager) NonceLockFrom(from common.Address) *sync.Mutex {
-	lock, _ := nm.lockMap.LoadOrStore(from, &sync.Mutex{})
-	return lock.(*sync.Mutex)
-}
-
 func (nm *SimpleManager) PendingNonceAt(ctx context.Context, account common.Address) (uint64, error) {
-	// nm.lock.Lock()
-	// defer nm.lock.Unlock()
-
 	locker := nm.NonceLockFrom(account)
 	locker.Lock()
 	defer locker.Unlock()
@@ -51,15 +40,22 @@ func (nm *SimpleManager) PendingNonceAt(ctx context.Context, account common.Addr
 		err   error
 	)
 
-	nonce, ok := nm.nonceMap[account]
-	if !ok {
+	nonce, err = nm.GetNonce(account)
+	if err != nil {
+		return 0, err
+	}
+
+	if nonce == 0 {
 		nonce, err = nm.client.NonceAt(ctx, account, nil)
 		if err != nil {
 			return 0, err
 		}
 	}
 
-	nm.nonceMap[account] = nonce + 1
+	err = nm.SetNonce(account, nonce+1)
+	if err != nil {
+		return 0, err
+	}
 
 	return nonce, nil
 }
@@ -77,13 +73,17 @@ func (nm *SimpleManager) SuggestGasPrice(ctx context.Context) (gasPrice *big.Int
 	return
 }
 
-func (nm *SimpleManager) PeekNonce(account common.Address) uint64 {
+func (nm *SimpleManager) PeekNonce(account common.Address) (uint64, error) {
 	locker := nm.NonceLockFrom(account)
 	locker.Lock()
 	defer locker.Unlock()
 
-	nonce := nm.nonceMap[account]
-	return nonce
+	nonce, err := nm.GetNonce(account)
+	if err != nil {
+		return 0, err
+	}
+
+	return nonce, nil
 }
 
 func (nm *SimpleManager) ResetNonce(ctx context.Context, account common.Address) error {
@@ -96,7 +96,10 @@ func (nm *SimpleManager) ResetNonce(ctx context.Context, account common.Address)
 		return err
 	}
 
-	nm.nonceMap[account] = nonceInLatest
+	err = nm.SetNonce(account, nonceInLatest)
+	if err != nil {
+		return err
+	}
 
 	return nil
 }

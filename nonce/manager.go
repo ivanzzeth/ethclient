@@ -9,7 +9,7 @@ import (
 
 type Manager interface {
 	PendingNonceAt(ctx context.Context, account common.Address) (uint64, error)
-	PeekNonce(account common.Address) uint64
+	PeekNonce(account common.Address) (uint64, error)
 	ResetNonce(ctx context.Context, account common.Address) error
 	SuggestGasPrice(ctx context.Context) (*big.Int, error)
 }
