@@ -17,19 +17,16 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/google/uuid"
+	"github.com/ivanzz/ethclient/nonce"
 )
 
 type Client struct {
 	*ethclient.Client
 	rpcClient *rpc.Client
-	NonceManager
+	nonce.Manager
 	msgBuffer int
 	Subscriber
 }
-
-const (
-	DefaultMsgBuffer = 10
-)
 
 func Dial(rawurl string) (*Client, error) {
 	rpcClient, err := rpc.Dial(rawurl)
@@ -39,7 +36,7 @@ func Dial(rawurl string) (*Client, error) {
 
 	c := ethclient.NewClient(rpcClient)
 
-	nm, err := NewSimpleNonceManager(c)
+	nm, err := nonce.NewSimpleNonceManager(c)
 	if err != nil {
 		return nil, err
 	}
@@ -50,15 +47,15 @@ func Dial(rawurl string) (*Client, error) {
 	}
 
 	return &Client{
-		Client:       c,
-		rpcClient:    rpcClient,
-		msgBuffer:    DefaultMsgBuffer,
-		NonceManager: nm,
-		Subscriber:   subscriber,
+		Client:     c,
+		rpcClient:  rpcClient,
+		msgBuffer:  DefaultMsgBuffer,
+		Manager:    nm,
+		Subscriber: subscriber,
 	}, nil
 }
 
-func DialWithNonceManager(rawurl string, nm NonceManager) (*Client, error) {
+func DialWithNonceManager(rawurl string, nm nonce.Manager) (*Client, error) {
 	rpcClient, err := rpc.Dial(rawurl)
 	if err != nil {
 		return nil, err
@@ -72,18 +69,18 @@ func DialWithNonceManager(rawurl string, nm NonceManager) (*Client, error) {
 	}
 
 	return &Client{
-		Client:       c,
-		rpcClient:    rpcClient,
-		msgBuffer:    DefaultMsgBuffer,
-		NonceManager: nm,
-		Subscriber:   subscriber,
+		Client:     c,
+		rpcClient:  rpcClient,
+		msgBuffer:  DefaultMsgBuffer,
+		Manager:    nm,
+		Subscriber: subscriber,
 	}, nil
 }
 
 func NewClient(c *rpc.Client) (*Client, error) {
 	ethc := ethclient.NewClient(c)
 
-	nm, err := NewSimpleNonceManager(ethc)
+	nm, err := nonce.NewSimpleNonceManager(ethc)
 	if err != nil {
 		return nil, err
 	}
@@ -94,11 +91,11 @@ func NewClient(c *rpc.Client) (*Client, error) {
 	}
 
 	return &Client{
-		Client:       ethc,
-		rpcClient:    c,
-		msgBuffer:    DefaultMsgBuffer,
-		NonceManager: nm,
-		Subscriber:   subscriber,
+		Client:     ethc,
+		rpcClient:  c,
+		msgBuffer:  DefaultMsgBuffer,
+		Manager:    nm,
+		Subscriber: subscriber,
 	}, nil
 }
 
@@ -111,8 +108,8 @@ func (c *Client) RawClient() *ethclient.Client {
 	return c.Client
 }
 
-func (c *Client) SetNonceManager(nm NonceManager) {
-	c.NonceManager = nm
+func (c *Client) SetNonceManager(nm nonce.Manager) {
+	c.Manager = nm
 }
 
 func (c *Client) SetMsgBuffer(buffer int) {
@@ -296,11 +293,11 @@ func (c *Client) NewTransaction(ctx context.Context, msg ethereum.CallMsg) (*typ
 }
 
 func (c *Client) PendingNonceAt(ctx context.Context, account common.Address) (uint64, error) {
-	return c.NonceManager.PendingNonceAt(ctx, account)
+	return c.Manager.PendingNonceAt(ctx, account)
 }
 
 func (c *Client) SuggestGasPrice(ctx context.Context) (gasPrice *big.Int, err error) {
-	return c.NonceManager.SuggestGasPrice(ctx)
+	return c.Manager.SuggestGasPrice(ctx)
 }
 
 func (c *Client) WaitTxReceipt(txHash common.Hash, confirmations uint64, timeout time.Duration) (*types.Receipt, bool) {

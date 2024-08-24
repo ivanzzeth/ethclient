@@ -1,4 +1,4 @@
-package ethclient
+package nonce
 
 import (
 	"context"
@@ -9,26 +9,21 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 )
 
-type NonceManager interface {
-	PendingNonceAt(ctx context.Context, account common.Address) (uint64, error)
-	PeekNonce(account common.Address) uint64
-	ResetNonce(ctx context.Context, account common.Address) error
-	SuggestGasPrice(ctx context.Context) (*big.Int, error)
-}
+var _ Manager = &SimpleManager{}
 
-type SimpleNonceManager struct {
+type SimpleManager struct {
 	nonceMap map[common.Address]uint64
 	lockMap  sync.Map
 	// lock     sync.Mutex
 	client *ethclient.Client
 }
 
-var snm *SimpleNonceManager
+var snm *SimpleManager
 var snmOnce sync.Once
 
-func NewSimpleNonceManager(client *ethclient.Client) (*SimpleNonceManager, error) {
+func NewSimpleNonceManager(client *ethclient.Client) (*SimpleManager, error) {
 	snmOnce.Do(func() {
-		snm = &SimpleNonceManager{
+		snm = &SimpleManager{
 			nonceMap: make(map[common.Address]uint64),
 			lockMap:  sync.Map{},
 			client:   client,
@@ -38,12 +33,12 @@ func NewSimpleNonceManager(client *ethclient.Client) (*SimpleNonceManager, error
 	return snm, nil
 }
 
-func (nm *SimpleNonceManager) NonceLockFrom(from common.Address) *sync.Mutex {
+func (nm *SimpleManager) NonceLockFrom(from common.Address) *sync.Mutex {
 	lock, _ := nm.lockMap.LoadOrStore(from, &sync.Mutex{})
 	return lock.(*sync.Mutex)
 }
 
-func (nm *SimpleNonceManager) PendingNonceAt(ctx context.Context, account common.Address) (uint64, error) {
+func (nm *SimpleManager) PendingNonceAt(ctx context.Context, account common.Address) (uint64, error) {
 	// nm.lock.Lock()
 	// defer nm.lock.Unlock()
 
@@ -69,7 +64,7 @@ func (nm *SimpleNonceManager) PendingNonceAt(ctx context.Context, account common
 	return nonce, nil
 }
 
-func (nm *SimpleNonceManager) SuggestGasPrice(ctx context.Context) (gasPrice *big.Int, err error) {
+func (nm *SimpleManager) SuggestGasPrice(ctx context.Context) (gasPrice *big.Int, err error) {
 	gasPrice, err = nm.client.SuggestGasPrice(ctx)
 	if err != nil {
 		return
@@ -82,7 +77,7 @@ func (nm *SimpleNonceManager) SuggestGasPrice(ctx context.Context) (gasPrice *bi
 	return
 }
 
-func (nm *SimpleNonceManager) PeekNonce(account common.Address) uint64 {
+func (nm *SimpleManager) PeekNonce(account common.Address) uint64 {
 	locker := nm.NonceLockFrom(account)
 	locker.Lock()
 	defer locker.Unlock()
@@ -91,7 +86,7 @@ func (nm *SimpleNonceManager) PeekNonce(account common.Address) uint64 {
 	return nonce
 }
 
-func (nm *SimpleNonceManager) ResetNonce(ctx context.Context, account common.Address) error {
+func (nm *SimpleManager) ResetNonce(ctx context.Context, account common.Address) error {
 	locker := nm.NonceLockFrom(account)
 	locker.Lock()
 	defer locker.Unlock()
