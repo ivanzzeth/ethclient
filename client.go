@@ -120,16 +120,17 @@ func (c *Client) SetMsgBuffer(buffer int) {
 }
 
 type Message struct {
-	Id         uuid.UUID
-	From       common.Address    // the sender of the 'transaction'
-	PrivateKey *ecdsa.PrivateKey // overwrite From if not nil
-	To         *common.Address   // the destination contract (nil for contract creation)
-	Gas        uint64            // if 0, the call executes with near-infinite gas
-	GasPrice   *big.Int          // wei <-> gas exchange ratio
-	Value      *big.Int          // amount of wei sent along with the call
-	Data       []byte            // input data, usually an ABI-encoded contract method invocation
+	Id       uuid.UUID
+	From     common.Address  // the sender of the 'transaction', who will be overwrite if private key not nil
+	To       *common.Address // the destination contract (nil for contract creation)
+	Gas      uint64          // if 0, the call executes with near-infinite gas
+	GasPrice *big.Int        // wei <-> gas exchange ratio
+	Value    *big.Int        // amount of wei sent along with the call
+	Data     []byte          // input data, usually an ABI-encoded contract method invocation
 
 	AccessList types.AccessList // EIP-2930 access list.
+
+	PrivateKey *ecdsa.PrivateKey // must be not nil if send the message
 }
 
 func AssignMessageId(msg *Message) *Message {
@@ -218,7 +219,7 @@ func (c *Client) SafeSendMsg(ctx context.Context, msg Message) (*types.Transacti
 	return tx, returnData, err
 }
 
-func (c *Client) SendMsg(ctx context.Context, msg Message) (*types.Transaction, error) {
+func (c *Client) SendMsg(ctx context.Context, msg Message) (signedTx *types.Transaction, err error) {
 	if msg.PrivateKey == nil {
 		return nil, ErrMessagePrivateKeyNil
 	}
@@ -245,7 +246,7 @@ func (c *Client) SendMsg(ctx context.Context, msg Message) (*types.Transaction, 
 		return nil, fmt.Errorf("get Chain ID err: %v", err)
 	}
 
-	signedTx, err := types.SignTx(tx, types.NewEIP2930Signer(chainID), msg.PrivateKey)
+	signedTx, err = types.SignTx(tx, types.NewEIP2930Signer(chainID), msg.PrivateKey)
 	if err != nil {
 		return nil, fmt.Errorf("SignTx err: %v", err)
 	}
@@ -278,7 +279,7 @@ func (c *Client) NewTransaction(ctx context.Context, msg ethereum.CallMsg) (*typ
 
 	if msg.GasPrice == nil || msg.GasPrice.Uint64() == 0 {
 		var err error
-		msg.GasPrice, err = c.Client.SuggestGasPrice(ctx)
+		msg.GasPrice, err = c.SuggestGasPrice(ctx)
 		if err != nil {
 			return nil, err
 		}
