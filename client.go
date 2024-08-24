@@ -266,12 +266,13 @@ func (c *Client) NewTransaction(ctx context.Context, msg ethereum.CallMsg) (*typ
 	}
 
 	if msg.Gas == 0 {
-		gas, err := c.Client.EstimateGas(ctx, msg)
+		gas, err := c.EstimateGas(ctx, msg)
 		if err != nil {
 			return nil, err
 		}
 
-		msg.Gas = gas
+		// Multiplier 1.5
+		msg.Gas = gas * 1500 / 1000
 	}
 
 	if msg.GasPrice == nil || msg.GasPrice.Uint64() == 0 {
