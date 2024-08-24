@@ -298,6 +298,10 @@ func (c *Client) PendingNonceAt(ctx context.Context, account common.Address) (ui
 	return c.NonceManager.PendingNonceAt(ctx, account)
 }
 
+func (c *Client) SuggestGasPrice(ctx context.Context) (gasPrice *big.Int, err error) {
+	return c.NonceManager.SuggestGasPrice(ctx)
+}
+
 func (c *Client) WaitTxReceipt(txHash common.Hash, confirmations uint64, timeout time.Duration) (*types.Receipt, bool) {
 	startTime := time.Now()
 	for {
