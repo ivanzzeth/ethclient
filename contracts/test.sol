@@ -4,6 +4,8 @@ pragma solidity >=0.8.0;
 contract Test {
     uint256 public counter;
 
+    error TestRevert();
+
     event CounterUpdated(uint256 counter);
     event FuncEvent1(string arg1, uint256 arg2, bytes arg3);
 
@@ -15,13 +17,13 @@ contract Test {
 
     function testReverted(bool r) public pure {
         if (r) {
-            revert("test reverted");
+            revert TestRevert();
         }
     }
 
     function testRandomlyReverted() public view {
         if (block.number % 4 == 0) {
-            revert("test reverted");
+            revert TestRevert();
         }
     }
 }

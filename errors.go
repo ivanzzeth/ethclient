@@ -3,8 +3,6 @@ package ethclient
 import (
 	"errors"
 	"fmt"
-
-	"github.com/ethereum/go-ethereum/common"
 )
 
 var (
@@ -12,11 +10,20 @@ var (
 	ErrMessagePrivateKeyNil = errors.New("PrivateKey is nil")
 )
 
-type EVMErr struct {
-	TxHash common.Hash // Empty if do call message.
-	Err    string
+type JsonRpcError struct {
+	Code    int         `json:"code"`
+	Message string      `json:"message"`
+	Data    interface{} `json:"data,omitempty"`
 }
 
-func (e EVMErr) Error() string {
-	return fmt.Sprintf("tx %v reverted reason: %v", e.TxHash.Hex(), e.Err)
+func (err *JsonRpcError) Error() string {
+	return fmt.Sprintf("json-rpc error(code=%d, msg=\"%s\", data=%v)", err.Code, err.Message, err.Data)
+}
+
+func (err *JsonRpcError) ErrorCode() int {
+	return err.Code
+}
+
+func (err *JsonRpcError) ErrorData() interface{} {
+	return err.Data
 }

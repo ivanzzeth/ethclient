@@ -138,6 +138,34 @@ func Test_CallContract_Concurrent(t *testing.T) {
 	test_CallContract_Concurrent(t, client)
 }
 
+func Test_DecodeJsonRpcError(t *testing.T) {
+	client, err := Dial("http://localhost:8545")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+
+	ctx := context.Background()
+	// Deploy Test contract.
+	contractAddr, txOfContractCreation, _, err := deployTestContract(t, ctx, client)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Log("TestContract creation transaction", "txHex", txOfContractCreation.Hash().Hex(), "contract", contractAddr.Hex())
+
+	_, contains := client.WaitTxReceipt(txOfContractCreation.Hash(), 2, 5*time.Second)
+	assert.Equal(t, true, contains)
+
+	testContract, err := contracts.NewContracts(contractAddr, client)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = testContract.TestReverted(nil, true)
+	t.Log("TestReverted err: ", err)
+}
+
 func testBatchSendMsg(t *testing.T, client *Client) {
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
 	defer cancel()

@@ -368,3 +368,47 @@ func (c *Client) FilterLogs(ctx context.Context, q ethereum.FilterQuery) (logs [
 func (c *Client) SubscribeNewHead(ctx context.Context, ch chan<- *types.Header) error {
 	return c.Subscriber.SubscribeNewHead(ctx, ch)
 }
+
+func (c *Client) EstimateGas(ctx context.Context, msg ethereum.CallMsg) (uint64, error) {
+	gas, err := c.Client.EstimateGas(ctx, msg)
+	if err != nil {
+		return 0, c.DecodeJsonRpcError(err)
+	}
+
+	return gas, nil
+}
+
+func (c *Client) CallContract(ctx context.Context, msg ethereum.CallMsg, blockNumber *big.Int) ([]byte, error) {
+	ret, err := c.Client.CallContract(ctx, msg, blockNumber)
+	if err != nil {
+		return nil, c.DecodeJsonRpcError(err)
+	}
+
+	return ret, nil
+}
+
+func (c *Client) CallContractAtHash(ctx context.Context, msg ethereum.CallMsg, blockHash common.Hash) ([]byte, error) {
+	ret, err := c.Client.CallContractAtHash(ctx, msg, blockHash)
+	if err != nil {
+		return nil, c.DecodeJsonRpcError(err)
+	}
+
+	return ret, nil
+}
+
+// TODO: Implement c.Client.PendingCallContract()
+
+func (c *Client) DecodeJsonRpcError(err error) error {
+	jsonErr := &JsonRpcError{}
+	ec, ok := err.(rpc.Error)
+	if ok {
+		jsonErr.Code = ec.ErrorCode()
+	}
+
+	de, ok := err.(rpc.DataError)
+	if ok {
+		jsonErr.Data = de.ErrorData()
+	}
+
+	return jsonErr
+}
