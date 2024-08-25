@@ -145,6 +145,8 @@ func Test_DecodeJsonRpcError(t *testing.T) {
 	}
 	defer client.Close()
 
+	client.SetABI(contracts.GetTestContractABI())
+
 	ctx := context.Background()
 	// Deploy Test contract.
 	contractAddr, txOfContractCreation, _, err := deployTestContract(t, ctx, client)

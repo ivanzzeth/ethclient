@@ -25,6 +25,7 @@ type Client struct {
 	rpcClient *rpc.Client
 	nonce.Manager
 	msgBuffer int
+	abi       abi.ABI
 	Subscriber
 }
 
@@ -398,8 +399,13 @@ func (c *Client) CallContractAtHash(ctx context.Context, msg ethereum.CallMsg, b
 
 // TODO: Implement c.Client.PendingCallContract()
 
+// Trying to decode some data using the abi if specific
+func (c *Client) SetABI(abi abi.ABI) {
+	c.abi = abi
+}
+
 func (c *Client) DecodeJsonRpcError(err error) error {
-	jsonErr := &JsonRpcError{}
+	jsonErr := &JsonRpcError{abi: c.abi}
 	ec, ok := err.(rpc.Error)
 	if ok {
 		jsonErr.Code = ec.ErrorCode()
