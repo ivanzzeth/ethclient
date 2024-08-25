@@ -2,6 +2,7 @@ package ethclient
 
 import (
 	"context"
+	"fmt"
 	"math/big"
 	"time"
 
@@ -12,149 +13,202 @@ import (
 )
 
 var (
-	reconnectInterval = 2 * time.Second
+	retryInterval = 2 * time.Second
 )
 
-var _ Subscriber = (*ChainSubscrier)(nil)
+var _ Subscriber = (*ChainSubscriber)(nil)
 
-// ChainSubscrier implements Subscriber interface
-type ChainSubscrier struct {
-	c *ethclient.Client
+// ChainSubscriber implements Subscriber interface
+type ChainSubscriber struct {
+	c             *ethclient.Client
+	retryInterval time.Duration
+	buffer        int
+	blocksPerScan uint64
 }
 
 // NewChainSubscriber .
-func NewChainSubscriber(c *ethclient.Client) (*ChainSubscrier, error) {
-	return &ChainSubscrier{c}, nil
+func NewChainSubscriber(c *ethclient.Client) (*ChainSubscriber, error) {
+	return &ChainSubscriber{
+		c:             c,
+		buffer:        DefaultMsgBuffer,
+		blocksPerScan: DefaultBlocksPerScan,
+		retryInterval: retryInterval,
+	}, nil
 }
 
-// SubscribeFilterlog support getting logs from `From` block to `To` block and
-// auto reconnect if network disconnected.
-func (cs *ChainSubscrier) SubscribeFilterlogs(ctx context.Context, q ethereum.FilterQuery, ch chan<- types.Log) error {
-	// checkChan := make(chan types.Log)
+func (cs *ChainSubscriber) SubscribeFilterlogs(ctx context.Context, q ethereum.FilterQuery, ch chan<- types.Log) (err error) {
+	log.Debug("SubscribeFilterlogs starts", "query", q)
+	fromBlock := uint64(0)
+	if q.FromBlock != nil {
+		fromBlock = q.FromBlock.Uint64()
+	}
 
-	// Support from `From` block to latest block.
-	logs, err := cs.c.FilterLogs(ctx, q)
+	lastBlock, err := cs.c.BlockNumber(ctx)
 	if err != nil {
 		return err
 	}
 
-	checkChan := make(chan types.Log, len(logs))
-
-	for _, l := range logs {
-		checkChan <- l
+	toBlock := uint64(0)
+	if q.ToBlock != nil {
+		toBlock = q.ToBlock.Uint64()
+	} else {
+		toBlock = lastBlock
 	}
 
-	resubscribeFunc := func() (ethereum.Subscription, error) {
-		return cs.c.SubscribeFilterLogs(ctx, q, checkChan)
+	startBlock := fromBlock
+	endBlock := toBlock + 1
+
+	if startBlock >= endBlock {
+		return fmt.Errorf("invalid block number")
 	}
 
-	return cs.subscribeFilterlog(ctx, resubscribeFunc, q, checkChan, ch)
-}
-
-func (cs *ChainSubscrier) subscribeFilterlog(ctx context.Context, fn resubscribeFunc, query ethereum.FilterQuery, checkChan <-chan types.Log, resultChan chan<- types.Log) error {
-	// Pipeline: ethclient subscribe --> checkChan(validate log and get missing log) --> resultChan --> user
-
-	// Report whether the comming log has seen.
-	hasSeen := func(lastLog, commingLog types.Log) bool {
-		if lastLog.BlockNumber > commingLog.BlockNumber {
-			return true
-		} else if lastLog.BlockNumber == commingLog.BlockNumber {
-			if lastLog.TxIndex > commingLog.TxIndex {
-				return true
-			} else if lastLog.TxIndex == commingLog.TxIndex &&
-				lastLog.Index >= commingLog.Index {
-				return true
-			}
-		}
-
-		return false
-	}
-
-	// The goroutine for geting missing log and sending log to result channel.
 	go func() {
-		var lastLog *types.Log
 		for {
 			select {
-			case commingLog := <-checkChan:
-				if lastLog != nil {
-					if hasSeen(*lastLog, commingLog) {
-						log.Warn("Duplicate logs", "block", commingLog.BlockNumber, "tx", commingLog.TxHash.Hex(),
-							"txIndex", commingLog.TxIndex, "index", commingLog.Index)
-						continue
-					} else {
-						// Lost some logs between lastLog and commingLog if the network disconnected.
-						// Retrieve potentially missing log and make sure not duplicate.
-
-						// TODO: There are many duplicate logs, and optimize here in future.
-						start, end := lastLog.BlockNumber, commingLog.BlockNumber
-						for start <= end {
-							query.FromBlock = big.NewInt(int64(start))
-							vlog, err := cs.c.FilterLogs(ctx, query)
-							if err != nil {
-								if err == context.Canceled || err == context.DeadlineExceeded {
-									log.Debug("SubscribeFilterlog Filterlog exit...")
-									return
-								}
-
-								log.Warn("Client subscribeFilterlog filterlog", "err", err)
-								time.Sleep(reconnectInterval)
-								continue
-							}
-
-							if len(vlog) != 0 {
-								log.Debug("Client got missing log", "from", start, "to", end)
-							}
-
-							for _, l := range vlog {
-								l := l
-								if hasSeen(*lastLog, l) {
-									log.Debug("Duplicate logs", "block", l.BlockNumber, "tx", l.TxHash.Hex(),
-										"txIndex", l.TxIndex, "index", l.Index, "last", *lastLog)
-									continue
-								}
-								lastLog = &l
-								resultChan <- l
-							}
-
-							start = end + 1
-						}
-					}
-				} else {
-					lastLog = &commingLog
-					resultChan <- commingLog
-				}
 			case <-ctx.Done():
-				log.Debug("SubscribeFilterlog exit...")
+				close(ch)
 				return
+			default:
+				log.Debug("SubscribeFilterlogs loops", "start", startBlock, "end", endBlock)
+				lastBlock, err := cs.c.BlockNumber(ctx)
+				if err != nil {
+					log.Debug("", "curr", lastBlock, "wait", lastBlock, "sleep", cs.retryInterval)
+					time.Sleep(cs.retryInterval)
+					continue
+				}
+
+				if endBlock > lastBlock+1 {
+					// wait for generation
+					log.Debug("waitng for block generation", "curr", lastBlock, "wait", lastBlock, "sleep", cs.retryInterval)
+					time.Sleep(cs.retryInterval)
+					continue
+				}
+
+				q.FromBlock = big.NewInt(0).SetUint64(startBlock)
+				q.ToBlock = big.NewInt(0).SetUint64(endBlock - 1)
+				err = cs.FilterLogsWithChannel(ctx, q, ch, false)
+				if err != nil {
+					log.Debug("SubscribeFilterlogs call FilterLogsWithChannel failed", "err", err)
+					time.Sleep(cs.retryInterval)
+					continue
+				}
+
+				lastBlock, err = cs.c.BlockNumber(ctx)
+				if err != nil {
+					log.Debug("SubscribeFilterlogs call BlockNumber failed", "err", err)
+					time.Sleep(cs.retryInterval)
+					continue
+				}
+
+				startBlock = endBlock
+				endBlock = lastBlock + 1
+
+				time.Sleep(cs.retryInterval)
 			}
 		}
 	}()
 
-	// The goroutine to subscribe filter log and send log to check channel.
+	return
+}
+
+func (cs *ChainSubscriber) FilterLogs(ctx context.Context, q ethereum.FilterQuery) (logs []types.Log, err error) {
+	logsChan := make(chan types.Log, cs.buffer)
+	err = cs.FilterLogsWithChannel(ctx, q, logsChan, true)
+	if err != nil {
+		return nil, err
+	}
+
+	for l := range logsChan {
+		logs = append(logs, l)
+	}
+
+	return
+}
+
+func (cs *ChainSubscriber) FilterLogsWithChannel(ctx context.Context, q ethereum.FilterQuery, logsChan chan<- types.Log, closeOnExit bool) (err error) {
+	if q.BlockHash != nil {
+		logs, err := cs.c.FilterLogs(ctx, q)
+		if err != nil {
+			return err
+		}
+
+		go func() {
+			for _, l := range logs {
+				logsChan <- l
+			}
+			if closeOnExit {
+				close(logsChan)
+			}
+		}()
+
+		return nil
+	}
+
+	fromBlock := uint64(0)
+	if q.FromBlock != nil {
+		fromBlock = q.FromBlock.Uint64()
+	}
+
+	toBlock := uint64(0)
+	if q.ToBlock != nil {
+		toBlock = q.ToBlock.Uint64()
+	} else {
+		toBlock, err = cs.c.BlockNumber(ctx)
+		if err != nil {
+			return err
+		}
+	}
+
+	startBlock := fromBlock
+	endBlock := startBlock + cs.blocksPerScan
+	log.Debug("FilterLogsWithChannel starts", "from", fromBlock, "to", toBlock, "startBlock", startBlock, "endBlock", endBlock)
+
 	go func() {
-		for {
-			log.Debug("Client resubscribe log...")
-
-			sub, err := fn()
-			switch {
-			case err == context.Canceled || err == context.DeadlineExceeded:
-				log.Debug("SubscribeFilterlog exit...")
-				return
-			case err != nil:
-				log.Warn("Client resubscribelogFunc  err: ", err)
-				time.Sleep(reconnectInterval)
-				continue
-			}
-
+		for startBlock <= toBlock {
 			select {
-			case err := <-sub.Err():
-				log.Warn("Client subscribe log err: ", err)
-				sub.Unsubscribe()
-				time.Sleep(reconnectInterval)
 			case <-ctx.Done():
-				log.Debug("SubscribeFilterlog exit...")
+				log.Debug("FilterLogsWithChannel exits", "err", ctx.Err(), "from", fromBlock, "to", toBlock, "startBlock", startBlock, "endBlock", endBlock)
+				close(logsChan)
 				return
+			default:
+				if endBlock > toBlock {
+					endBlock = toBlock
+				}
+
+				lastBlock, err := cs.c.BlockNumber(ctx)
+				if err != nil {
+					time.Sleep(cs.retryInterval)
+					continue
+				}
+				if endBlock > lastBlock {
+					endBlock = lastBlock
+				}
+
+				log.Debug("FilterLogsWithChannel loops", "from", startBlock, "to", endBlock)
+
+				lgs, err := cs.c.FilterLogs(ctx, ethereum.FilterQuery{
+					BlockHash: nil,
+					FromBlock: big.NewInt(0).SetUint64(startBlock),
+					ToBlock:   big.NewInt(0).SetUint64(endBlock),
+					Addresses: q.Addresses,
+					Topics:    q.Topics,
+				})
+				if err != nil {
+					log.Debug("FilterLogsWithChannel filter failed, waiting for retry...", "err", err)
+					time.Sleep(cs.retryInterval)
+					continue
+				}
+
+				for _, l := range lgs {
+					logsChan <- l
+				}
+
+				startBlock, endBlock = endBlock+1, endBlock+cs.blocksPerScan
 			}
+		}
+
+		if closeOnExit {
+			close(logsChan)
 		}
 	}()
 
@@ -162,7 +216,7 @@ func (cs *ChainSubscrier) subscribeFilterlog(ctx context.Context, fn resubscribe
 }
 
 // SubscribeNewHead .
-func (cs *ChainSubscrier) SubscribeNewHead(ctx context.Context, ch chan<- *types.Header) error {
+func (cs *ChainSubscriber) SubscribeNewHead(ctx context.Context, ch chan<- *types.Header) error {
 	checkChan := make(chan *types.Header)
 	resubscribeFunc := func() (ethereum.Subscription, error) {
 		return cs.c.SubscribeNewHead(ctx, checkChan)
@@ -172,7 +226,7 @@ func (cs *ChainSubscrier) SubscribeNewHead(ctx context.Context, ch chan<- *types
 }
 
 // subscribeNewHead subscribes new header and auto reconnect if the connection lost.
-func (cs *ChainSubscrier) subscribeNewHead(ctx context.Context, fn resubscribeFunc, checkChan <-chan *types.Header, resultChan chan<- *types.Header) error {
+func (cs *ChainSubscriber) subscribeNewHead(ctx context.Context, fn resubscribeFunc, checkChan <-chan *types.Header, resultChan chan<- *types.Header) error {
 	// The goroutine for geting missing header and sending header to result channel.
 	go func() {
 		var lastHeader *types.Header
@@ -197,7 +251,7 @@ func (cs *ChainSubscrier) subscribeNewHead(ctx context.Context, fn resubscribeFu
 								return
 							case ethereum.NotFound:
 								log.Warn("Client subscribeNewHead err: header not found")
-								time.Sleep(reconnectInterval)
+								time.Sleep(retryInterval)
 								continue
 							case nil:
 								log.Debug("Client get missing header", "number", start)
@@ -205,7 +259,7 @@ func (cs *ChainSubscrier) subscribeNewHead(ctx context.Context, fn resubscribeFu
 								resultChan <- header
 							default: // ! nil
 								log.Warn("Client subscribeNewHead", "err", err)
-								time.Sleep(reconnectInterval)
+								time.Sleep(retryInterval)
 								continue
 							}
 						}
@@ -228,7 +282,7 @@ func (cs *ChainSubscrier) subscribeNewHead(ctx context.Context, fn resubscribeFu
 					return
 				}
 				log.Warn("ChainClient resubscribeHeadFunc", "err", err)
-				time.Sleep(reconnectInterval)
+				time.Sleep(retryInterval)
 				continue
 			}
 
@@ -236,7 +290,7 @@ func (cs *ChainSubscrier) subscribeNewHead(ctx context.Context, fn resubscribeFu
 			case err := <-sub.Err():
 				log.Warn("ChainClient subscribe head", "err", err)
 				sub.Unsubscribe()
-				time.Sleep(reconnectInterval)
+				time.Sleep(retryInterval)
 			}
 		}
 	}()

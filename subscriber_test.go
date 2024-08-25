@@ -3,19 +3,25 @@ package ethclient
 import (
 	"context"
 	"math/big"
+	"os"
 	"testing"
 	"time"
 
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/stretchr/testify/assert"
 )
 
 func TestSubscriber(t *testing.T) {
-	// log.SetDefault(log.NewLogger())
-	// log.Root().SetHandler(log.StdoutHandler)
-	// log.Root().SetHandler(log.LvlFilterHandler(log.LvlInfo, log.Root().GetHandler()))
-	client := newTestClient(t)
+	handler := log.NewTerminalHandler(os.Stdout, true)
+	logger := log.NewLogger(handler)
+	log.SetDefault(logger)
+
+	client, err := Dial("http://localhost:8545")
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer client.Close()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
@@ -32,6 +38,22 @@ func TestSubscriber(t *testing.T) {
 	_, contains := client.WaitTxReceipt(txOfContractCreation.Hash(), 2, 5*time.Second)
 	assert.Equal(t, true, contains)
 
+	// Subscribe logs
+
+	fromBlock, err := client.BlockNumber(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	logs := make(chan types.Log)
+	err = client.Subscriber.SubscribeFilterlogs(ctx, ethereum.FilterQuery{
+		FromBlock: big.NewInt(0).SetUint64(fromBlock),
+	}, logs)
+	if err != nil {
+		t.Fatal("Subscribe logs err: ", err)
+	}
+	logCount := 0
+
 	// Method args
 	arg1 := "hello"
 	arg2 := big.NewInt(100)
@@ -46,18 +68,9 @@ func TestSubscriber(t *testing.T) {
 		t.Fatalf("TestFunc1 err: %v", err)
 	}
 
-	t.Log("contractCallTx send sucessul", "txHash", contractCallTx.Hash().Hex())
-
-	_, contains = client.WaitTxReceipt(contractCallTx.Hash(), 2, 20*time.Second)
+	receipt, contains := client.WaitTxReceipt(contractCallTx.Hash(), 2, 5*time.Second)
 	assert.Equal(t, true, contains)
-
-	// Subscribe logs
-	logs := make(chan types.Log)
-	err = client.Subscriber.SubscribeFilterlogs(ctx, ethereum.FilterQuery{}, logs)
-	if err != nil {
-		t.Fatal("Subscribe logs err: ", err)
-	}
-	logCount := 0
+	t.Log("contractCallTx send sucessul", "txHash", contractCallTx.Hash().Hex(), "block", receipt.BlockNumber.Uint64())
 
 	go func() {
 		for {
@@ -84,8 +97,25 @@ func TestSubscriber(t *testing.T) {
 
 	t.Log("contractCallTx send sucessul", "txHash", contractCallTx.Hash().Hex())
 
-	_, contains = client.WaitTxReceipt(contractCallTx.Hash(), 2, 20*time.Second)
+	receipt, contains = client.WaitTxReceipt(contractCallTx.Hash(), 2, 5*time.Second)
+	t.Log("contractCallTx send sucessul", "txHash", contractCallTx.Hash().Hex(), "block", receipt.BlockNumber.Uint64())
 
+	toBlock, err := client.BlockNumber(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	filteredLogs, err := client.FilterLogs(ctx, ethereum.FilterQuery{
+		FromBlock: big.NewInt(0).SetUint64(fromBlock),
+		ToBlock:   big.NewInt(0).SetUint64(toBlock),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	assert.Equal(t, 4, len(filteredLogs))
+
+	time.Sleep(5 * time.Second)
 	assert.Equal(t, true, contains)
 	assert.Equal(t, 4, logCount)
 }

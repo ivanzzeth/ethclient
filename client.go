@@ -356,3 +356,15 @@ func (c *Client) MessageToTransactOpts(ctx context.Context, msg Message) (*bind.
 
 	return auth, nil
 }
+
+func (c *Client) SubscribeFilterlogs(ctx context.Context, query ethereum.FilterQuery, ch chan<- types.Log) error {
+	return c.Subscriber.SubscribeFilterlogs(ctx, query, ch)
+}
+
+func (c *Client) FilterLogs(ctx context.Context, q ethereum.FilterQuery) (logs []types.Log, err error) {
+	return c.Subscriber.FilterLogs(ctx, q)
+}
+
+func (c *Client) SubscribeNewHead(ctx context.Context, ch chan<- *types.Header) error {
+	return c.Subscriber.SubscribeNewHead(ctx, ch)
+}
