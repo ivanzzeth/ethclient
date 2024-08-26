@@ -397,7 +397,14 @@ func (c *Client) CallContractAtHash(ctx context.Context, msg ethereum.CallMsg, b
 	return ret, nil
 }
 
-// TODO: Implement c.Client.PendingCallContract()
+func (c *Client) PendingCallContract(ctx context.Context, msg ethereum.CallMsg) ([]byte, error) {
+	ret, err := c.Client.PendingCallContract(ctx, msg)
+	if err != nil {
+		return nil, c.DecodeJsonRpcError(err)
+	}
+
+	return ret, nil
+}
 
 // Trying to decode some data using the abi if specific
 func (c *Client) SetABI(abi abi.ABI) {

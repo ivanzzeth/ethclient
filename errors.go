@@ -37,7 +37,6 @@ type JsonRpcError struct {
 	abi     abi.ABI
 }
 
-// TODO: translate error using abi
 func (e *JsonRpcError) Error() string {
 	errData := e.Data
 	if data, ok := e.Data.(string); ok {
