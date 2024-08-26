@@ -47,6 +47,7 @@ func (e *JsonRpcError) Error() string {
 		hexData, err := hex.DecodeString(data)
 		if err == nil && len(hexData) >= 4 {
 			errorDefinition, err := e.abi.ErrorByID([4]byte(hexData))
+			// error defined in ABI
 			if err == nil {
 				// name := errorDefinition.Name
 				errSignature := errorDefinition.String()
@@ -60,6 +61,12 @@ func (e *JsonRpcError) Error() string {
 					Id:            id,
 					FuncSignature: errSignature,
 					Params:        params,
+				}
+			} else {
+				// try to decode using abi.Encoder
+				revertReason, err := abi.UnpackRevert(hexData)
+				if err == nil {
+					errData = fmt.Sprintf(`reverted with %s`, revertReason)
 				}
 			}
 		}

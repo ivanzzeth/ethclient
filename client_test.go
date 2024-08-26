@@ -166,6 +166,9 @@ func Test_DecodeJsonRpcError(t *testing.T) {
 
 	err = testContract.TestReverted(nil, true)
 	t.Log("TestReverted err: ", err)
+
+	err = testContract.TestRevertedString(nil, true)
+	t.Log("TestRevertedString err: ", err)
 }
 
 func testBatchSendMsg(t *testing.T, client *Client) {

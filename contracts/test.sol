@@ -21,6 +21,12 @@ contract Test {
         }
     }
 
+    function testRevertedString(bool r) public pure {
+        if (r) {
+            revert("revert string");
+        }
+    }
+
     function testRandomlyReverted() public view {
         if (block.number % 4 == 0) {
             revert TestRevert(1, 2);
