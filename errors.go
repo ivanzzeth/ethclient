@@ -15,6 +15,21 @@ var (
 	ErrMessagePrivateKeyNil = errors.New("PrivateKey is nil")
 )
 
+type RevertError struct {
+	Id            string
+	FuncSignature string
+	Params        []interface{}
+}
+
+func (e RevertError) Error() string {
+	paramsJs, _ := json.Marshal(e.Params)
+
+	paramsStr := strings.ReplaceAll(string(paramsJs), "\"", "")
+	paramsStr = strings.ReplaceAll(paramsStr, "[", "")
+	paramsStr = strings.ReplaceAll(paramsStr, "]", "")
+	return fmt.Sprintf("%s %s(%v)", e.Id, e.FuncSignature, paramsStr)
+}
+
 type JsonRpcError struct {
 	Code    int         `json:"code"`
 	Message string      `json:"message"`
@@ -26,13 +41,11 @@ type JsonRpcError struct {
 func (e *JsonRpcError) Error() string {
 	errData := e.Data
 	if data, ok := e.Data.(string); ok {
-		fmt.Println("JSONRPCERROR111, ", data)
 		if strings.HasPrefix(data, "0x") {
 			data = data[2:]
 		}
 		hexData, err := hex.DecodeString(data)
 		if err == nil && len(hexData) >= 4 {
-			fmt.Println("JSONRPCERROR222, ", data)
 			errorDefinition, err := e.abi.ErrorByID([4]byte(hexData))
 			if err == nil {
 				// name := errorDefinition.Name
@@ -43,15 +56,11 @@ func (e *JsonRpcError) Error() string {
 				params, _ := errorDefinition.Inputs.Unpack(hexData[4:])
 				id := errorDefinition.ID.Hex()
 
-				paramsJs, _ := json.Marshal(params)
-
-				// keysStr := strings.ReplaceAll(string(keysJs), "\"", "")
-				paramsStr := strings.ReplaceAll(string(paramsJs), "\"", "")
-
-				paramsStr = strings.ReplaceAll(paramsStr, "[", "")
-				paramsStr = strings.ReplaceAll(paramsStr, "]", "")
-
-				errData = fmt.Sprintf("%s %s(%v)", id, errSignature, paramsStr)
+				errData = RevertError{
+					Id:            id,
+					FuncSignature: errSignature,
+					Params:        params,
+				}
 			}
 		}
 	}
