@@ -12,7 +12,6 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/go-redsync/redsync/v4/redis/goredis/v9"
-	"github.com/google/uuid"
 	"github.com/ivanzz/ethclient/contracts"
 	"github.com/ivanzz/ethclient/nonce"
 	goredislib "github.com/redis/go-redis/v9"
@@ -225,7 +224,7 @@ func test_BatchSendMsg_RandomlyReverted(t *testing.T, client *Client) {
 	_, contains := client.WaitTxReceipt(txOfContractCreation.Hash(), 2, 5*time.Second)
 	assert.Equal(t, true, contains)
 
-	wantErrMap := make(map[uuid.UUID]bool, 0)
+	wantErrMap := make(map[common.Hash]bool, 0)
 
 	mesgsChan := make(chan Message, buffer)
 	msgRespChan := client.BatchSendMsg(ctx, mesgsChan)
@@ -247,9 +246,9 @@ func test_BatchSendMsg_RandomlyReverted(t *testing.T, client *Client) {
 				},
 			)
 			mesgsChan <- *msg
-			wantErrMap[msg.Id] = number%4 == 0
+			wantErrMap[msg.id] = number%4 == 0
 
-			t.Logf("Write MSG to channel, block: %v, blockMod: %v, msgId: %v", number, number%4, msg.Id.String())
+			t.Logf("Write MSG to channel, block: %v, blockMod: %v, msgId: %v", number, number%4, msg.id.String())
 		}
 
 		t.Log("Close send channel")
@@ -283,10 +282,10 @@ func test_BatchSendMsg_RandomlyReverted(t *testing.T, client *Client) {
 		wantExecutionFail := receipt.BlockNumber.Int64()%4 == 0
 		if wantExecutionFail {
 			assert.Equal(t, types.ReceiptStatusFailed, receipt.Status,
-				"id=%v block=%v blockMod=%v", resp.Id.String(), receipt.BlockNumber.Int64(), receipt.BlockNumber.Int64()%4)
+				"id=%v block=%v blockMod=%v", resp.id.String(), receipt.BlockNumber.Int64(), receipt.BlockNumber.Int64()%4)
 		} else {
 			assert.Equal(t, types.ReceiptStatusSuccessful, receipt.Status,
-				"id=%v block=%v blockMod=%v", resp.Id.String(), receipt.BlockNumber.Int64(), receipt.BlockNumber.Int64()%4)
+				"id=%v block=%v blockMod=%v", resp.id.String(), receipt.BlockNumber.Int64(), receipt.BlockNumber.Int64()%4)
 		}
 	}
 	t.Log("Exit")

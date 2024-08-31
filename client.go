@@ -2,7 +2,6 @@ package ethclient
 
 import (
 	"context"
-	"crypto/ecdsa"
 	"fmt"
 	"math/big"
 	"time"
@@ -117,30 +116,11 @@ func (c *Client) SetMsgBuffer(buffer int) {
 	c.msgBuffer = buffer
 }
 
-type Message struct {
-	Id       uuid.UUID
-	From     common.Address  // the sender of the 'transaction', who will be overwrite if private key not nil
-	To       *common.Address // the destination contract (nil for contract creation)
-	Gas      uint64          // if 0, the call executes with near-infinite gas
-	GasPrice *big.Int        // wei <-> gas exchange ratio
-	Value    *big.Int        // amount of wei sent along with the call
-	Data     []byte          // input data, usually an ABI-encoded contract method invocation
-
-	AccessList types.AccessList // EIP-2930 access list.
-
-	PrivateKey *ecdsa.PrivateKey // must be not nil if send the message
-}
-
 func AssignMessageId(msg *Message) *Message {
-	msg.Id, _ = uuid.NewUUID()
+	uid, _ := uuid.NewUUID()
+	uidBytes, _ := uid.MarshalBinary()
+	msg.id = crypto.Keccak256Hash(uidBytes)
 	return msg
-}
-
-type MessageResponse struct {
-	Id         uuid.UUID
-	Tx         *types.Transaction
-	ReturnData []byte // not nil if using SafeBatchSendMsg and no err
-	Err        error
 }
 
 func (c *Client) NewMethodData(a abi.ABI, methodName string, args ...interface{}) ([]byte, error) {
@@ -154,7 +134,7 @@ func (c *Client) SafeBatchSendMsg(ctx context.Context, msgs <-chan Message) <-ch
 			tx, returnData, err := c.SafeSendMsg(ctx, msg)
 			// TODO: Release nonce...
 			msgResChan <- MessageResponse{
-				Id:         msg.Id,
+				id:         msg.id,
 				Tx:         tx,
 				ReturnData: returnData,
 				Err:        err,
@@ -173,7 +153,7 @@ func (c *Client) BatchSendMsg(ctx context.Context, msgs <-chan Message) <-chan M
 		for msg := range msgs {
 			tx, err := c.SendMsg(ctx, msg)
 			msgResChan <- MessageResponse{
-				Id:  msg.Id,
+				id:  msg.id,
 				Tx:  tx,
 				Err: err,
 			}
