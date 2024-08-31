@@ -2,7 +2,6 @@ package ethclient
 
 import (
 	"context"
-	"crypto/ecdsa"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum"
@@ -12,7 +11,7 @@ import (
 
 type Message struct {
 	id       common.Hash
-	From     common.Address  // the sender of the 'transaction', who will be overwrite if private key not nil
+	From     common.Address  // the sender of the 'transaction'
 	To       *common.Address // the destination contract (nil for contract creation)
 	Value    *big.Int        // amount of wei sent along with the call
 	Gas      uint64          // if 0, the call executes with near-infinite gas
@@ -21,9 +20,8 @@ type Message struct {
 
 	AccessList types.AccessList // EIP-2930 access list.
 
-	AfterMsg   common.Hash // message id. Used for making sure the msg was executed after it.
-	status     MessageStatus
-	PrivateKey *ecdsa.PrivateKey // must be not nil if send the message
+	AfterMsg common.Hash // message id. Used for making sure the msg was executed after it.
+	status   MessageStatus
 }
 
 type MessageStatus uint8

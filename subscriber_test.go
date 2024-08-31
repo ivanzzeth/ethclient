@@ -61,7 +61,7 @@ func TestSubscriber(t *testing.T) {
 
 	// First transact.
 	opts, err := client.MessageToTransactOpts(ctx, Message{
-		PrivateKey: privateKey,
+		From: addr,
 	})
 	contractCallTx, err := contract.TestFunc1(opts, arg1, arg2, arg3)
 	if err != nil {
@@ -88,7 +88,7 @@ func TestSubscriber(t *testing.T) {
 
 	// Second transact.
 	opts, err = client.MessageToTransactOpts(ctx, Message{
-		PrivateKey: privateKey,
+		From: addr,
 	})
 	contractCallTx, err = contract.TestFunc1(opts, arg1, arg2, arg3)
 	if err != nil {

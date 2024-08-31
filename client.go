@@ -2,6 +2,7 @@ package ethclient
 
 import (
 	"context"
+	"crypto/ecdsa"
 	"fmt"
 	"math/big"
 	"time"
@@ -25,6 +26,8 @@ type Client struct {
 	nonce.Manager
 	msgBuffer int
 	abi       abi.ABI
+	signers   []bind.SignerFn // Method to use for signing the transaction (mandatory)
+
 	Subscriber
 }
 
@@ -112,6 +115,60 @@ func (c *Client) SetNonceManager(nm nonce.Manager) {
 	c.Manager = nm
 }
 
+func (c *Client) GetSigner() bind.SignerFn {
+	// combine all signerFn
+	return func(a common.Address, t *types.Transaction) (tx *types.Transaction, err error) {
+		if len(c.signers) == 0 {
+			return nil, fmt.Errorf("no signerFn registered")
+		}
+
+		for i, fn := range c.signers {
+			tx, err = fn(a, t)
+			log.Debug("try to call signerFn", "index", i, "err", err, "account", a)
+
+			if err != nil {
+				continue
+			}
+
+			return tx, nil
+		}
+
+		return nil, bind.ErrNotAuthorized
+	}
+}
+
+func (c *Client) RegisterSigner(signerFn bind.SignerFn) {
+	log.Info("register signerFn for signing...")
+	c.signers = append(c.signers, signerFn)
+}
+
+// Registers the private key used for signing txs.
+func (c *Client) RegisterPrivateKey(ctx context.Context, key *ecdsa.PrivateKey) error {
+	chainID, err := c.ChainID(ctx)
+	if err != nil {
+		return err
+	}
+	keyAddr := crypto.PubkeyToAddress(key.PublicKey)
+	if chainID == nil {
+		return bind.ErrNoChainID
+	}
+	signer := types.LatestSignerForChainID(chainID)
+	signerFn := func(address common.Address, tx *types.Transaction) (*types.Transaction, error) {
+		if address != keyAddr {
+			return nil, bind.ErrNotAuthorized
+		}
+		signature, err := crypto.Sign(signer.Hash(tx).Bytes(), key)
+		if err != nil {
+			return nil, err
+		}
+		return tx.WithSignature(signer, signature)
+	}
+
+	c.RegisterSigner(signerFn)
+
+	return nil
+}
+
 func (c *Client) SetMsgBuffer(buffer int) {
 	c.msgBuffer = buffer
 }
@@ -166,10 +223,6 @@ func (c *Client) BatchSendMsg(ctx context.Context, msgs <-chan Message) <-chan M
 }
 
 func (c *Client) CallMsg(ctx context.Context, msg Message, blockNumber *big.Int) (returnData []byte, err error) {
-	if msg.PrivateKey != nil {
-		msg.From = crypto.PubkeyToAddress(msg.PrivateKey.PublicKey)
-	}
-
 	ethMesg := ethereum.CallMsg{
 		From:       msg.From,
 		To:         msg.To,
@@ -198,12 +251,6 @@ func (c *Client) SafeSendMsg(ctx context.Context, msg Message) (*types.Transacti
 }
 
 func (c *Client) SendMsg(ctx context.Context, msg Message) (signedTx *types.Transaction, err error) {
-	if msg.PrivateKey == nil {
-		return nil, ErrMessagePrivateKeyNil
-	}
-
-	msg.From = crypto.PubkeyToAddress(msg.PrivateKey.PublicKey)
-
 	ethMesg := ethereum.CallMsg{
 		From:       msg.From,
 		To:         msg.To,
@@ -219,14 +266,20 @@ func (c *Client) SendMsg(ctx context.Context, msg Message) (signedTx *types.Tran
 		return nil, fmt.Errorf("NewTransaction err: %v", err)
 	}
 
-	chainID, err := c.Client.ChainID(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("get Chain ID err: %v", err)
-	}
+	// chainID, err := c.Client.ChainID(ctx)
+	// if err != nil {
+	// 	return nil, fmt.Errorf("get Chain ID err: %v", err)
+	// }
 
-	signedTx, err = types.SignTx(tx, types.NewEIP2930Signer(chainID), msg.PrivateKey)
+	// signedTx, err = types.SignTx(tx, types.NewEIP2930Signer(chainID), msg.PrivateKey)
+	// if err != nil {
+	// 	return nil, fmt.Errorf("SignTx err: %v", err)
+	// }
+
+	signerFn := c.GetSigner()
+	signedTx, err = signerFn(msg.From, tx)
 	if err != nil {
-		return nil, fmt.Errorf("SignTx err: %v", err)
+		return nil, err
 	}
 
 	err = c.Client.SendTransaction(ctx, signedTx)
@@ -310,26 +363,15 @@ func (c *Client) WaitTxReceipt(txHash common.Hash, confirmations uint64, timeout
 // MessageToTransactOpts .
 // NOTE: You must provide private key for signature.
 func (c *Client) MessageToTransactOpts(ctx context.Context, msg Message) (*bind.TransactOpts, error) {
-	if msg.PrivateKey == nil {
-		return nil, ErrMessagePrivateKeyNil
-	}
-	msg.From = crypto.PubkeyToAddress(msg.PrivateKey.PublicKey)
-
 	nonce, err := c.PendingNonceAt(ctx, msg.From)
 	if err != nil {
 		return nil, err
 	}
 
-	chainID, err := c.Client.ChainID(ctx)
-	if err != nil {
-		return nil, err
-	}
+	auth := &bind.TransactOpts{}
 
-	auth, err := bind.NewKeyedTransactorWithChainID(msg.PrivateKey, chainID)
-	if err != nil {
-		return nil, err
-	}
-
+	auth.From = msg.From
+	auth.Signer = c.GetSigner()
 	auth.Nonce = big.NewInt(int64(nonce))
 	auth.Value = msg.Value
 	auth.GasLimit = msg.Gas

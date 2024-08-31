@@ -3,6 +3,7 @@ package ethclient
 import (
 	"context"
 	"math/big"
+	"os"
 	"testing"
 	"time"
 
@@ -24,12 +25,12 @@ var (
 )
 
 func deployTestContract(t *testing.T, ctx context.Context, client *Client) (common.Address, *types.Transaction, *contracts.Contracts, error) {
-	auth, err := client.MessageToTransactOpts(ctx, Message{PrivateKey: privateKey})
+	auth, err := client.MessageToTransactOpts(ctx, Message{From: addr})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	return contracts.DeployContracts(auth, client.RawClient())
+	return contracts.DeployContracts(auth, client)
 }
 
 func newTestClient(t *testing.T) *Client {
@@ -58,31 +59,40 @@ func newTestClient(t *testing.T) *Client {
 	return client
 }
 
-func TestBatchSendMsg(t *testing.T) {
+func setUpClient(t *testing.T) *Client {
+	handler := log.NewTerminalHandler(os.Stdout, true)
+	logger := log.NewLogger(handler)
+	log.SetDefault(logger)
+
 	client, err := Dial("http://localhost:8545")
 	if err != nil {
 		t.Fatal(err)
 	}
+
+	err = client.RegisterPrivateKey(context.Background(), privateKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	return client
+}
+
+func TestBatchSendMsg(t *testing.T) {
+	client := setUpClient(t)
 	defer client.Close()
 
 	testBatchSendMsg(t, client)
 }
 
 func Test_BatchSendMsg_RandomlyReverted(t *testing.T) {
-	client, err := Dial("http://localhost:8545")
-	if err != nil {
-		t.Fatal(err)
-	}
+	client := setUpClient(t)
 	defer client.Close()
 
 	test_BatchSendMsg_RandomlyReverted(t, client)
 }
 
 func Test_BatchSendMsg_RandomlyReverted_WithRedis(t *testing.T) {
-	client, err := Dial("http://localhost:8545")
-	if err != nil {
-		t.Fatal(err)
-	}
+	client := setUpClient(t)
 	defer client.Close()
 
 	// Create a pool with go-redis (or redigo) which is the pool redisync will
@@ -106,42 +116,28 @@ func Test_BatchSendMsg_RandomlyReverted_WithRedis(t *testing.T) {
 }
 
 func TestCallContract(t *testing.T) {
-	client, err := Dial("http://localhost:8545")
-	if err != nil {
-		t.Fatal(err)
-	}
+	client := setUpClient(t)
 	defer client.Close()
 
 	testCallContract(t, client)
 }
 
 func TestContractRevert(t *testing.T) {
-	log.SetDefault(log.NewLogger(log.DiscardHandler()))
-	// client := newTestClient(t)
-	client, err := Dial("http://localhost:8545")
-	if err != nil {
-		t.Fatal(err)
-	}
+	client := setUpClient(t)
 	defer client.Close()
 
 	testContractRevert(t, client)
 }
 
 func Test_CallContract_Concurrent(t *testing.T) {
-	client, err := Dial("http://localhost:8545")
-	if err != nil {
-		t.Fatal(err)
-	}
+	client := setUpClient(t)
 	defer client.Close()
 
 	test_CallContract_Concurrent(t, client)
 }
 
 func Test_DecodeJsonRpcError(t *testing.T) {
-	client, err := Dial("http://localhost:8545")
-	if err != nil {
-		t.Fatal(err)
-	}
+	client := setUpClient(t)
 	defer client.Close()
 
 	client.SetABI(contracts.GetTestContractABI())
@@ -181,8 +177,8 @@ func testBatchSendMsg(t *testing.T, client *Client) {
 		for i := 0; i < 2*buffer; i++ {
 			to := common.HexToAddress("0x06514D014e997bcd4A9381bF0C4Dc21bD32718D4")
 			mesgsChan <- Message{
-				PrivateKey: privateKey,
-				To:         &to,
+				From: addr,
+				To:   &to,
 			}
 			t.Log("Write MSG to channel")
 		}
@@ -239,10 +235,10 @@ func test_BatchSendMsg_RandomlyReverted(t *testing.T, client *Client) {
 			to := contractAddr
 			msg := AssignMessageId(
 				&Message{
-					PrivateKey: privateKey,
-					To:         &to,
-					Data:       data,
-					Gas:        1000000,
+					From: addr,
+					To:   &to,
+					Data: data,
+					Gas:  1000000,
 				},
 			)
 			mesgsChan <- *msg
@@ -336,9 +332,9 @@ func testCallContract(t *testing.T, client *Client) {
 	}
 
 	contractCallTx, err := client.SendMsg(ctx, Message{
-		PrivateKey: privateKey,
-		To:         &contractAddr,
-		Data:       data,
+		From: addr,
+		To:   &contractAddr,
+		Data: data,
 	})
 	if err != nil {
 		t.Fatalf("Send single Message err: %v", err)
@@ -379,11 +375,11 @@ func testContractRevert(t *testing.T, client *Client) {
 
 	// Send successful, but executation failed.
 	contractCallTx, err := client.SendMsg(ctx, Message{
-		PrivateKey: privateKey,
-		To:         &contractAddr,
-		Data:       data,
-		Gas:        210000,
-		GasPrice:   big.NewInt(10),
+		From:     addr,
+		To:       &contractAddr,
+		Data:     data,
+		Gas:      210000,
+		GasPrice: big.NewInt(10),
 	})
 	if err != nil {
 		t.Fatalf("Send single Message, err: %v", err)
@@ -398,9 +394,9 @@ func testContractRevert(t *testing.T, client *Client) {
 
 	// Send failed, because estimateGas faield.
 	contractCallTx, err = client.SendMsg(ctx, Message{
-		PrivateKey: privateKey,
-		To:         &contractAddr,
-		Data:       data,
+		From: addr,
+		To:   &contractAddr,
+		Data: data,
 	})
 	t.Log("Send Message without specific gas and gasPrice, err: ", err)
 	// Send Message without specific gas and gasPrice, err:  NewTransaction err: execution reverted: test reverted
@@ -408,9 +404,9 @@ func testContractRevert(t *testing.T, client *Client) {
 
 	// Call failed, because evm execution faield.
 	returnData, err := client.CallMsg(ctx, Message{
-		PrivateKey: privateKey,
-		To:         &contractAddr,
-		Data:       data,
+		From: addr,
+		To:   &contractAddr,
+		Data: data,
 	}, nil)
 	t.Log("Call Message err: ", err)
 	assert.Equal(t, 0, len(returnData))
