@@ -5,8 +5,9 @@ import (
 )
 
 type Storage interface {
-	AddMsg(msg Request) error
-	GetMsg(msgId common.Hash) (Request, error)
-	UpdateMsg(msg Request) error
+	AddMsg(req Request) error
+	GetMsg(msgId common.Hash) (Message, error)
+	UpdateMsg(msg Message) error
+	UpdateResponse(msgId common.Hash, resp Response) error
 	UpdateMsgStatus(msgId common.Hash, status MessageStatus) error
 }

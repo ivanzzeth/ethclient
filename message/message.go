@@ -9,6 +9,16 @@ import (
 	"github.com/google/uuid"
 )
 
+type Message struct {
+	Req    *Request
+	Resp   *Response
+	Status MessageStatus
+}
+
+func (m *Message) Id() common.Hash {
+	return m.Req.id
+}
+
 type Request struct {
 	id       common.Hash
 	From     common.Address  // the sender of the 'transaction'
@@ -21,7 +31,6 @@ type Request struct {
 	AccessList types.AccessList // EIP-2930 access list.
 
 	AfterMsg common.Hash // message id. Used for making sure the msg was executed after it.
-	status   MessageStatus
 }
 
 type MessageStatus uint8
@@ -30,7 +39,6 @@ const (
 	MessageStatusPending MessageStatus = iota
 	MessageStatusQueued
 	MessageStatusNonceAssigned
-	MessageStatusNonceConsumed
 	MessageStatusInflight // Broadcasted but not on chain
 	MessageStatusOnChain
 	MessageStatusFinalized

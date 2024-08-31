@@ -1,28 +1,61 @@
 package message
 
-// var _ Storage = &MemoryStorage{}
+import (
+	"fmt"
+	"sync"
 
-// type MemoryStorage struct {
-// 	store sync.Map
-// }
+	"github.com/ethereum/go-ethereum/common"
+)
 
-// func NewMemoryStorage() (*MemoryStorage, error) {
-// 	return &MemoryStorage{}, nil
-// }
+var _ Storage = &MemoryStorage{}
 
-// func (s *MemoryStorage) AddMsg(msg Message) error {
-// 	// s.store.Store(msg.id, )
-// 	return nil
-// }
+type MemoryStorage struct {
+	store sync.Map
+}
 
-// func (s *MemoryStorage) GetMsg(msgId common.Hash) (Message, error) {
+func NewMemoryStorage() (*MemoryStorage, error) {
+	return &MemoryStorage{}, nil
+}
 
-// }
+func (s *MemoryStorage) AddMsg(req Request) error {
+	s.store.Store(req.id, Message{
+		Req:    &req,
+		Status: MessageStatusPending,
+	})
+	return nil
+}
 
-// func (s *MemoryStorage) UpdateMsg(msg Message) error {
+func (s *MemoryStorage) GetMsg(msgId common.Hash) (Message, error) {
+	msg, ok := s.store.Load(msgId)
+	if !ok {
+		return Message{}, fmt.Errorf("not found")
+	}
 
-// }
+	return msg.(Message), nil
+}
 
-// func (s *MemoryStorage) UpdateMsgStatus(msgId common.Hash, status MessageStatus) error {
+func (s *MemoryStorage) UpdateMsg(msg Message) error {
+	s.store.Store(msg.Req.id, msg)
+	return nil
+}
 
-// }
+func (s *MemoryStorage) UpdateResponse(msgId common.Hash, resp Response) error {
+	msg, err := s.GetMsg(msgId)
+	if err != nil {
+		return err
+	}
+
+	msg.Resp = &resp
+	return s.UpdateMsg(msg)
+}
+
+func (s *MemoryStorage) UpdateMsgStatus(msgId common.Hash, status MessageStatus) error {
+	msg, err := s.GetMsg(msgId)
+	if err != nil {
+		return err
+	}
+
+	msg.Status = status
+
+	return s.UpdateMsg(msg)
+}

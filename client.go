@@ -25,6 +25,7 @@ type Client struct {
 	rpcClient *rpc.Client
 	nonce.Manager
 	msgBuffer int
+	msgStore  message.Storage
 	abi       abi.ABI
 	signers   []bind.SignerFn // Method to use for signing the transaction (mandatory)
 
@@ -37,53 +38,18 @@ func Dial(rawurl string) (*Client, error) {
 		return nil, err
 	}
 
-	c := ethclient.NewClient(rpcClient)
-
-	nm, err := nonce.NewSimpleManager(c, nonce.NewMemoryStorage())
-	if err != nil {
-		return nil, err
-	}
-
-	subscriber, err := NewChainSubscriber(c)
-	if err != nil {
-		return nil, err
-	}
-
-	return &Client{
-		Client:     c,
-		rpcClient:  rpcClient,
-		msgBuffer:  DefaultMsgBuffer,
-		Manager:    nm,
-		Subscriber: subscriber,
-	}, nil
-}
-
-func DialWithNonceManager(rawurl string, nm nonce.Manager) (*Client, error) {
-	rpcClient, err := rpc.Dial(rawurl)
-	if err != nil {
-		return nil, err
-	}
-
-	c := ethclient.NewClient(rpcClient)
-
-	subscriber, err := NewChainSubscriber(c)
-	if err != nil {
-		return nil, err
-	}
-
-	return &Client{
-		Client:     c,
-		rpcClient:  rpcClient,
-		msgBuffer:  DefaultMsgBuffer,
-		Manager:    nm,
-		Subscriber: subscriber,
-	}, nil
+	return NewClient(rpcClient)
 }
 
 func NewClient(c *rpc.Client) (*Client, error) {
 	ethc := ethclient.NewClient(c)
 
 	nm, err := nonce.NewSimpleManager(ethc, nonce.NewMemoryStorage())
+	if err != nil {
+		return nil, err
+	}
+
+	msgStore, err := message.NewMemoryStorage()
 	if err != nil {
 		return nil, err
 	}
@@ -97,6 +63,7 @@ func NewClient(c *rpc.Client) (*Client, error) {
 		Client:     ethc,
 		rpcClient:  c,
 		msgBuffer:  DefaultMsgBuffer,
+		msgStore:   msgStore,
 		Manager:    nm,
 		Subscriber: subscriber,
 	}, nil
@@ -173,6 +140,10 @@ func (c *Client) SetMsgBuffer(buffer int) {
 	c.msgBuffer = buffer
 }
 
+func (c *Client) GetMsg(msgId common.Hash) (message.Message, error) {
+	return c.msgStore.GetMsg(msgId)
+}
+
 func (c *Client) NewMethodData(a abi.ABI, methodName string, args ...interface{}) ([]byte, error) {
 	return a.Pack(methodName, args...)
 }
@@ -202,11 +173,18 @@ func (c *Client) BatchSendMsg(ctx context.Context, msgs <-chan message.Request) 
 	go func() {
 		for msg := range msgs {
 			tx, err := c.SendMsg(ctx, msg)
-			msgResChan <- message.Response{
+
+			resp := message.Response{
 				Id:  msg.Id(),
 				Tx:  tx,
 				Err: err,
 			}
+
+			err = c.msgStore.UpdateResponse(msg.Id(), resp)
+			if err != nil {
+				log.Debug("update msg response failed", "err", err, "msgId", msg.Id().Hex())
+			}
+			msgResChan <- resp
 		}
 
 		close(msgResChan)
@@ -244,6 +222,15 @@ func (c *Client) SafeSendMsg(ctx context.Context, msg message.Request) (*types.T
 }
 
 func (c *Client) SendMsg(ctx context.Context, msg message.Request) (signedTx *types.Transaction, err error) {
+	err = c.msgStore.AddMsg(msg)
+	if err != nil {
+		return nil, err
+	}
+
+	return c.sendMsg(ctx, msg)
+}
+
+func (c *Client) sendMsg(ctx context.Context, msg message.Request) (signedTx *types.Transaction, err error) {
 	ethMesg := ethereum.CallMsg{
 		From:       msg.From,
 		To:         msg.To,
@@ -257,6 +244,11 @@ func (c *Client) SendMsg(ctx context.Context, msg message.Request) (signedTx *ty
 	tx, err := c.NewTransaction(ctx, ethMesg)
 	if err != nil {
 		return nil, fmt.Errorf("NewTransaction err: %v", err)
+	}
+
+	err = c.msgStore.UpdateMsgStatus(msg.Id(), message.MessageStatusNonceAssigned)
+	if err != nil {
+		return nil, err
 	}
 
 	// chainID, err := c.Client.ChainID(ctx)
@@ -278,6 +270,11 @@ func (c *Client) SendMsg(ctx context.Context, msg message.Request) (signedTx *ty
 	err = c.Client.SendTransaction(ctx, signedTx)
 	if err != nil {
 		return nil, fmt.Errorf("SendTransaction err: %v", err)
+	}
+
+	err = c.msgStore.UpdateMsgStatus(msg.Id(), message.MessageStatusInflight)
+	if err != nil {
+		return nil, err
 	}
 
 	log.Debug("Send Message successfully", "txHash", signedTx.Hash().Hex(), "from", msg.From.Hex(),
