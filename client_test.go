@@ -14,6 +14,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/go-redsync/redsync/v4/redis/goredis/v9"
 	"github.com/ivanzz/ethclient/contracts"
+	"github.com/ivanzz/ethclient/message"
 	"github.com/ivanzz/ethclient/nonce"
 	goredislib "github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/assert"
@@ -25,7 +26,7 @@ var (
 )
 
 func deployTestContract(t *testing.T, ctx context.Context, client *Client) (common.Address, *types.Transaction, *contracts.Contracts, error) {
-	auth, err := client.MessageToTransactOpts(ctx, Message{From: addr})
+	auth, err := client.MessageToTransactOpts(ctx, message.Request{From: addr})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -171,12 +172,12 @@ func testBatchSendMsg(t *testing.T, client *Client) {
 	defer cancel()
 
 	buffer := 1000
-	mesgsChan := make(chan Message, buffer)
+	mesgsChan := make(chan message.Request, buffer)
 	msgRespChan := client.BatchSendMsg(ctx, mesgsChan)
 	go func() {
 		for i := 0; i < 2*buffer; i++ {
 			to := common.HexToAddress("0x06514D014e997bcd4A9381bF0C4Dc21bD32718D4")
-			mesgsChan <- Message{
+			mesgsChan <- message.Request{
 				From: addr,
 				To:   &to,
 			}
@@ -222,7 +223,7 @@ func test_BatchSendMsg_RandomlyReverted(t *testing.T, client *Client) {
 
 	wantErrMap := make(map[common.Hash]bool, 0)
 
-	mesgsChan := make(chan Message, buffer)
+	mesgsChan := make(chan message.Request, buffer)
 	msgRespChan := client.BatchSendMsg(ctx, mesgsChan)
 	go func() {
 		contractAbi := contracts.GetTestContractABI()
@@ -233,8 +234,8 @@ func test_BatchSendMsg_RandomlyReverted(t *testing.T, client *Client) {
 			assert.Equal(t, nil, err)
 
 			to := contractAddr
-			msg := AssignMessageId(
-				&Message{
+			msg := message.AssignMessageId(
+				&message.Request{
 					From: addr,
 					To:   &to,
 					Data: data,
@@ -242,9 +243,9 @@ func test_BatchSendMsg_RandomlyReverted(t *testing.T, client *Client) {
 				},
 			)
 			mesgsChan <- *msg
-			wantErrMap[msg.id] = number%4 == 0
+			wantErrMap[msg.Id()] = number%4 == 0
 
-			t.Logf("Write MSG to channel, block: %v, blockMod: %v, msgId: %v", number, number%4, msg.id.String())
+			t.Logf("Write MSG to channel, block: %v, blockMod: %v, msgId: %v", number, number%4, msg.Id().Hex())
 		}
 
 		t.Log("Close send channel")
@@ -278,10 +279,10 @@ func test_BatchSendMsg_RandomlyReverted(t *testing.T, client *Client) {
 		wantExecutionFail := receipt.BlockNumber.Int64()%4 == 0
 		if wantExecutionFail {
 			assert.Equal(t, types.ReceiptStatusFailed, receipt.Status,
-				"id=%v block=%v blockMod=%v", resp.id.String(), receipt.BlockNumber.Int64(), receipt.BlockNumber.Int64()%4)
+				"id=%v block=%v blockMod=%v", resp.Id.String(), receipt.BlockNumber.Int64(), receipt.BlockNumber.Int64()%4)
 		} else {
 			assert.Equal(t, types.ReceiptStatusSuccessful, receipt.Status,
-				"id=%v block=%v blockMod=%v", resp.id.String(), receipt.BlockNumber.Int64(), receipt.BlockNumber.Int64()%4)
+				"id=%v block=%v blockMod=%v", resp.Id.String(), receipt.BlockNumber.Int64(), receipt.BlockNumber.Int64()%4)
 		}
 	}
 	t.Log("Exit")
@@ -322,7 +323,7 @@ func testCallContract(t *testing.T, client *Client) {
 	}
 
 	// contract.TestFunc1(nil)
-	_, err = client.CallMsg(ctx, Message{
+	_, err = client.CallMsg(ctx, message.Request{
 		From: crypto.PubkeyToAddress(privateKey.PublicKey),
 		To:   &contractAddr,
 		Data: data,
@@ -331,7 +332,7 @@ func testCallContract(t *testing.T, client *Client) {
 		t.Fatalf("CallMsg err: %v", err)
 	}
 
-	contractCallTx, err := client.SendMsg(ctx, Message{
+	contractCallTx, err := client.SendMsg(ctx, message.Request{
 		From: addr,
 		To:   &contractAddr,
 		Data: data,
@@ -374,7 +375,7 @@ func testContractRevert(t *testing.T, client *Client) {
 	assert.Equal(t, nil, err)
 
 	// Send successful, but executation failed.
-	contractCallTx, err := client.SendMsg(ctx, Message{
+	contractCallTx, err := client.SendMsg(ctx, message.Request{
 		From:     addr,
 		To:       &contractAddr,
 		Data:     data,
@@ -393,7 +394,7 @@ func testContractRevert(t *testing.T, client *Client) {
 	t.Log("contractCallTx send sucessul", "txHash", contractCallTx.Hash().Hex())
 
 	// Send failed, because estimateGas faield.
-	contractCallTx, err = client.SendMsg(ctx, Message{
+	contractCallTx, err = client.SendMsg(ctx, message.Request{
 		From: addr,
 		To:   &contractAddr,
 		Data: data,
@@ -403,7 +404,7 @@ func testContractRevert(t *testing.T, client *Client) {
 	assert.NotEqual(t, nil, err, "expect revert transaction")
 
 	// Call failed, because evm execution faield.
-	returnData, err := client.CallMsg(ctx, Message{
+	returnData, err := client.CallMsg(ctx, message.Request{
 		From: addr,
 		To:   &contractAddr,
 		Data: data,

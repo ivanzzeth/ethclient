@@ -16,7 +16,7 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rpc"
-	"github.com/google/uuid"
+	"github.com/ivanzz/ethclient/message"
 	"github.com/ivanzz/ethclient/nonce"
 )
 
@@ -173,25 +173,18 @@ func (c *Client) SetMsgBuffer(buffer int) {
 	c.msgBuffer = buffer
 }
 
-func AssignMessageId(msg *Message) *Message {
-	uid, _ := uuid.NewUUID()
-	uidBytes, _ := uid.MarshalBinary()
-	msg.id = crypto.Keccak256Hash(uidBytes)
-	return msg
-}
-
 func (c *Client) NewMethodData(a abi.ABI, methodName string, args ...interface{}) ([]byte, error) {
 	return a.Pack(methodName, args...)
 }
 
-func (c *Client) SafeBatchSendMsg(ctx context.Context, msgs <-chan Message) <-chan MessageResponse {
-	msgResChan := make(chan MessageResponse, c.msgBuffer)
+func (c *Client) SafeBatchSendMsg(ctx context.Context, msgs <-chan message.Request) <-chan message.Response {
+	msgResChan := make(chan message.Response, c.msgBuffer)
 	go func() {
 		for msg := range msgs {
 			tx, returnData, err := c.SafeSendMsg(ctx, msg)
 			// TODO: Release nonce...
-			msgResChan <- MessageResponse{
-				id:         msg.id,
+			msgResChan <- message.Response{
+				Id:         msg.Id(),
 				Tx:         tx,
 				ReturnData: returnData,
 				Err:        err,
@@ -204,13 +197,13 @@ func (c *Client) SafeBatchSendMsg(ctx context.Context, msgs <-chan Message) <-ch
 	return msgResChan
 }
 
-func (c *Client) BatchSendMsg(ctx context.Context, msgs <-chan Message) <-chan MessageResponse {
-	msgResChan := make(chan MessageResponse, c.msgBuffer)
+func (c *Client) BatchSendMsg(ctx context.Context, msgs <-chan message.Request) <-chan message.Response {
+	msgResChan := make(chan message.Response, c.msgBuffer)
 	go func() {
 		for msg := range msgs {
 			tx, err := c.SendMsg(ctx, msg)
-			msgResChan <- MessageResponse{
-				id:  msg.id,
+			msgResChan <- message.Response{
+				Id:  msg.Id(),
 				Tx:  tx,
 				Err: err,
 			}
@@ -222,7 +215,7 @@ func (c *Client) BatchSendMsg(ctx context.Context, msgs <-chan Message) <-chan M
 	return msgResChan
 }
 
-func (c *Client) CallMsg(ctx context.Context, msg Message, blockNumber *big.Int) (returnData []byte, err error) {
+func (c *Client) CallMsg(ctx context.Context, msg message.Request, blockNumber *big.Int) (returnData []byte, err error) {
 	ethMesg := ethereum.CallMsg{
 		From:       msg.From,
 		To:         msg.To,
@@ -236,7 +229,7 @@ func (c *Client) CallMsg(ctx context.Context, msg Message, blockNumber *big.Int)
 	return c.Client.CallContract(ctx, ethMesg, blockNumber)
 }
 
-func (c *Client) SafeSendMsg(ctx context.Context, msg Message) (*types.Transaction, []byte, error) {
+func (c *Client) SafeSendMsg(ctx context.Context, msg message.Request) (*types.Transaction, []byte, error) {
 	returnData, err := c.CallMsg(ctx, msg, nil)
 	if err != nil {
 		return nil, nil, err
@@ -250,7 +243,7 @@ func (c *Client) SafeSendMsg(ctx context.Context, msg Message) (*types.Transacti
 	return tx, returnData, err
 }
 
-func (c *Client) SendMsg(ctx context.Context, msg Message) (signedTx *types.Transaction, err error) {
+func (c *Client) SendMsg(ctx context.Context, msg message.Request) (signedTx *types.Transaction, err error) {
 	ethMesg := ethereum.CallMsg{
 		From:       msg.From,
 		To:         msg.To,
@@ -362,7 +355,7 @@ func (c *Client) WaitTxReceipt(txHash common.Hash, confirmations uint64, timeout
 
 // MessageToTransactOpts .
 // NOTE: You must provide private key for signature.
-func (c *Client) MessageToTransactOpts(ctx context.Context, msg Message) (*bind.TransactOpts, error) {
+func (c *Client) MessageToTransactOpts(ctx context.Context, msg message.Request) (*bind.TransactOpts, error) {
 	nonce, err := c.PendingNonceAt(ctx, msg.From)
 	if err != nil {
 		return nil, err

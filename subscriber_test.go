@@ -10,6 +10,7 @@ import (
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ivanzz/ethclient/message"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -60,7 +61,7 @@ func TestSubscriber(t *testing.T) {
 	arg3 := []byte("world")
 
 	// First transact.
-	opts, err := client.MessageToTransactOpts(ctx, Message{
+	opts, err := client.MessageToTransactOpts(ctx, message.Request{
 		From: addr,
 	})
 	contractCallTx, err := contract.TestFunc1(opts, arg1, arg2, arg3)
@@ -87,7 +88,7 @@ func TestSubscriber(t *testing.T) {
 	}()
 
 	// Second transact.
-	opts, err = client.MessageToTransactOpts(ctx, Message{
+	opts, err = client.MessageToTransactOpts(ctx, message.Request{
 		From: addr,
 	})
 	contractCallTx, err = contract.TestFunc1(opts, arg1, arg2, arg3)
