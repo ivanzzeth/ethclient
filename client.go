@@ -180,10 +180,6 @@ func (c *Client) BatchSendMsg(ctx context.Context, msgs <-chan message.Request) 
 				Err: err,
 			}
 
-			err = c.msgStore.UpdateResponse(msg.Id(), resp)
-			if err != nil {
-				log.Debug("update msg response failed", "err", err, "msgId", msg.Id().Hex())
-			}
 			msgResChan <- resp
 		}
 
@@ -274,6 +270,18 @@ func (c *Client) sendMsg(ctx context.Context, msg message.Request) (signedTx *ty
 
 	err = c.msgStore.UpdateMsgStatus(msg.Id(), message.MessageStatusInflight)
 	if err != nil {
+		return nil, err
+	}
+
+	resp := message.Response{
+		Id:  msg.Id(),
+		Tx:  signedTx,
+		Err: err,
+	}
+
+	err = c.msgStore.UpdateResponse(msg.Id(), resp)
+	if err != nil {
+		log.Debug("update msg response failed", "err", err, "msgId", msg.Id().Hex())
 		return nil, err
 	}
 

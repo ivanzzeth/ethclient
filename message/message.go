@@ -11,7 +11,7 @@ import (
 
 type Message struct {
 	Req    *Request
-	Resp   *Response
+	Resp   *Response // not nil if inflight
 	Status MessageStatus
 }
 
@@ -42,6 +42,8 @@ const (
 	MessageStatusInflight // Broadcasted but not on chain
 	MessageStatusOnChain
 	MessageStatusFinalized
+	// it was broadcasted but not included on-chain until timeout, so the nonce was released
+	MessageStatusNonceReleased
 )
 
 type Response struct {
