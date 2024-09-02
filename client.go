@@ -184,6 +184,13 @@ func (c *Client) BatchSendMsg(ctx context.Context, msgs <-chan message.Request) 
 				msgResChan <- resp
 				continue
 			}
+
+			err = c.msgStore.UpdateMsgStatus(msg.Id(), message.MessageStatusQueued)
+			if err != nil {
+				resp.Err = err
+				msgResChan <- resp
+				continue
+			}
 		}
 
 		close(msgResChan)
