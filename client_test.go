@@ -3,7 +3,9 @@ package ethclient
 import (
 	"context"
 	"math/big"
+	"math/rand"
 	"os"
+	"sort"
 	"testing"
 	"time"
 
@@ -167,6 +169,13 @@ func Test_DecodeJsonRpcError(t *testing.T) {
 
 	err = testContract.TestRevertedString(nil, true)
 	t.Log("TestRevertedString err: ", err)
+}
+
+func Test_Sequencer_Concurrent(t *testing.T) {
+	client := setUpClient(t)
+	defer client.Close()
+
+	test_Sequencer_Concurrent(t, client)
 }
 
 func testBatchSendMsg(t *testing.T, client *Client) {
@@ -477,4 +486,89 @@ func test_CallContract_Concurrent(t *testing.T, client *Client) {
 	}
 
 	assert.Equal(t, uint64(batch), counter.Uint64())
+}
+
+func test_Sequencer_Concurrent(t *testing.T, client *Client) {
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
+	defer cancel()
+
+	// Deploy Test contract.
+	contractAddr, txOfContractCreation, contract, err := deployTestContract(t, ctx, client)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Log("TestContract creation transaction", "txHex", txOfContractCreation.Hash().Hex(), "contract", contractAddr.Hex())
+
+	_, contains := client.WaitTxReceipt(txOfContractCreation.Hash(), 2, 5*time.Second)
+	if !contains {
+		t.Fatalf("Deploy Contract err: %v", err)
+	}
+
+	assert.Equal(t, true, contains)
+
+	// Call contract method `testFunc1` id -> 0x88655d98
+	contractAbi := contracts.GetTestContractABI()
+
+	nonces := []int{2, 3, 1, 4, 7, 5, 6, 0, 8, 9}
+
+	// shuffle
+
+	rand.Shuffle(len(nonces), func(i, j int) {
+		nonces[i], nonces[j] = nonces[j], nonces[i]
+	})
+
+	t.Logf("shuffled nonces: %v", nonces)
+
+	msgChan := make(chan message.Request, 100)
+	respChan := client.BatchSendMsg(ctx, msgChan)
+
+	blockNumber, err := client.BlockNumber(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	go func() {
+		for _, nonce := range nonces {
+			data, err := client.NewMethodData(contractAbi, "testSequence", big.NewInt(int64(nonce)))
+			if err == nil {
+				var afterMsgId *common.Hash
+				if nonce > 0 {
+					afterMsgId = message.GenerateMessageIdByNonce(int64(nonce) - 1)
+				}
+				msg := message.AssignMessageIdWithNonce(&message.Request{
+					From:     addr,
+					To:       &contractAddr,
+					Data:     data,
+					AfterMsg: afterMsgId,
+				}, int64(nonce))
+
+				msgChan <- *msg
+			}
+		}
+
+		time.Sleep(5 * time.Second)
+		close(msgChan)
+	}()
+
+	for resp := range respChan {
+		t.Logf("resp: %+v", resp)
+	}
+
+	itr, err := contract.FilterExecution(&bind.FilterOpts{
+		Start: blockNumber,
+		End:   nil,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	nonceRes := []int{}
+	for itr.Next() {
+		nonce := itr.Event.Nonce.Int64()
+		t.Log("nonce:", nonce)
+		nonceRes = append(nonceRes, int(nonce))
+	}
+
+	assert.True(t, sort.IsSorted(sort.IntSlice(nonceRes)))
 }

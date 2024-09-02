@@ -61,6 +61,16 @@ func AssignMessageId(msg *Request) *Request {
 	return msg
 }
 
+func AssignMessageIdWithNonce(msg *Request, nonce int64) *Request {
+	msg.id = *GenerateMessageIdByNonce(nonce)
+	return msg
+}
+
+func GenerateMessageIdByNonce(nonce int64) *common.Hash {
+	hash := crypto.Keccak256Hash(big.NewInt(nonce).Bytes())
+	return &hash
+}
+
 func (m *Request) Id() common.Hash {
 	return m.id
 }

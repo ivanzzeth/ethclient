@@ -8,6 +8,7 @@ contract Test {
 
     event CounterUpdated(uint256 counter);
     event FuncEvent1(string arg1, uint256 arg2, bytes arg3);
+    event Execution(uint nonce);
 
     function testFunc1(string memory arg1, uint256 arg2, bytes memory arg3) public {
         emit FuncEvent1(arg1, arg2, arg3);
@@ -31,5 +32,9 @@ contract Test {
         if (block.number % 4 == 0) {
             revert TestRevert(1, 2);
         }
+    }
+
+    function testSequence(uint nonce) public {
+        emit Execution(nonce);
     }
 }
