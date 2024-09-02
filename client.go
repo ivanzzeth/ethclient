@@ -24,10 +24,11 @@ type Client struct {
 	*ethclient.Client
 	rpcClient *rpc.Client
 	nonce.Manager
-	msgBuffer int
-	msgStore  message.Storage
-	abi       abi.ABI
-	signers   []bind.SignerFn // Method to use for signing the transaction (mandatory)
+	msgBuffer    int
+	msgStore     message.Storage
+	msgSequencer message.Sequencer
+	abi          abi.ABI
+	signers      []bind.SignerFn // Method to use for signing the transaction (mandatory)
 
 	Subscriber
 }
@@ -54,18 +55,21 @@ func NewClient(c *rpc.Client) (*Client, error) {
 		return nil, err
 	}
 
+	msgSequencer := message.NewMemorySequencer(msgStore, 10)
+
 	subscriber, err := NewChainSubscriber(ethc)
 	if err != nil {
 		return nil, err
 	}
 
 	return &Client{
-		Client:     ethc,
-		rpcClient:  c,
-		msgBuffer:  DefaultMsgBuffer,
-		msgStore:   msgStore,
-		Manager:    nm,
-		Subscriber: subscriber,
+		Client:       ethc,
+		rpcClient:    c,
+		msgBuffer:    DefaultMsgBuffer,
+		msgStore:     msgStore,
+		msgSequencer: msgSequencer,
+		Manager:      nm,
+		Subscriber:   subscriber,
 	}, nil
 }
 
@@ -172,18 +176,30 @@ func (c *Client) BatchSendMsg(ctx context.Context, msgs <-chan message.Request) 
 	msgResChan := make(chan message.Response, c.msgBuffer)
 	go func() {
 		for msg := range msgs {
-			tx, err := c.SendMsg(ctx, msg)
+			resp := message.Response{Id: msg.Id()}
 
-			resp := message.Response{
-				Id:  msg.Id(),
-				Tx:  tx,
-				Err: err,
+			err := c.msgSequencer.PushMsg(msg)
+			if err != nil {
+				resp.Err = err
+				msgResChan <- resp
+				continue
 			}
-
-			msgResChan <- resp
 		}
 
 		close(msgResChan)
+	}()
+
+	go func() {
+		for {
+			msg, err := c.msgSequencer.PopMsg()
+			if err != nil {
+				msgResChan <- message.Response{Id: msg.Id(), Err: err}
+				continue
+			}
+
+			tx, err := c.sendMsg(ctx, msg)
+			msgResChan <- message.Response{Id: msg.Id(), Tx: tx, Err: err}
+		}
 	}()
 
 	return msgResChan

@@ -75,6 +75,8 @@ func setUpClient(t *testing.T) *Client {
 		t.Fatal(err)
 	}
 
+	client.SetABI(contracts.GetTestContractABI())
+
 	return client
 }
 

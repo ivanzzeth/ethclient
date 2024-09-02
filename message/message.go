@@ -30,6 +30,7 @@ type Request struct {
 
 	AccessList types.AccessList // EIP-2930 access list.
 
+	// ONLY available on function batchSendMsg
 	AfterMsg *common.Hash // message id. Used for making sure the msg was executed after it.
 }
 
