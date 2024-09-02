@@ -536,12 +536,13 @@ func test_Sequencer_Concurrent(t *testing.T, client *Client) {
 				if nonce > 0 {
 					afterMsgId = message.GenerateMessageIdByNonce(int64(nonce) - 1)
 				}
-				msg := message.AssignMessageIdWithNonce(&message.Request{
+				msg := &message.Request{
 					From:     addr,
 					To:       &contractAddr,
 					Data:     data,
 					AfterMsg: afterMsgId,
-				}, int64(nonce))
+				}
+				msg.SetIdWithNonce(int64(nonce))
 
 				msgChan <- *msg
 			}

@@ -74,3 +74,11 @@ func GenerateMessageIdByNonce(nonce int64) *common.Hash {
 func (m *Request) Id() common.Hash {
 	return m.id
 }
+
+func (q *Request) SetId(id common.Hash) {
+	q.id = id
+}
+
+func (q *Request) SetIdWithNonce(nonce int64) {
+	q.id = *GenerateMessageIdByNonce(nonce)
+}
