@@ -1,6 +1,6 @@
 package ethclient
 
 const (
-	DefaultMsgBuffer     = 10
+	DefaultMsgBuffer     = 1000
 	DefaultBlocksPerScan = 100
 )

@@ -40,7 +40,7 @@ func TestDiGraph(t *testing.T) {
 	for i, tt := range testcases {
 		t.Logf("run case#%d", i)
 
-		dag := NewDirectedGraph()
+		dag := NewDirectedGraph(10)
 
 		for j, d := range tt.dependencies {
 			if len(d) == 1 {

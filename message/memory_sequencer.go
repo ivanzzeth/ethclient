@@ -5,6 +5,7 @@ import (
 	"sync/atomic"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ivanzz/ethclient/ds/graph"
 )
 
@@ -24,7 +25,7 @@ type MemorySequencer struct {
 func NewMemorySequencer(msgStorage Storage, buffer int) *MemorySequencer {
 	s := &MemorySequencer{
 		msgStorage: msgStorage,
-		dag:        graph.NewDirectedGraph(),
+		dag:        graph.NewDirectedGraph(buffer),
 		queuedReq:  make(chan Request, buffer),
 		pendingReq: make(chan Request, buffer),
 	}
@@ -71,7 +72,15 @@ func (s *MemorySequencer) run() {
 			if req.AfterMsg == nil {
 				s.dag.AddVertex(req.Id())
 			} else {
-				s.dag.AddEdge(*req.AfterMsg, req.Id())
+				_, err := s.msgStorage.GetMsg(*req.AfterMsg)
+				if err == nil {
+					s.dag.AddEdge(*req.AfterMsg, req.Id())
+				} else {
+					// after message not ready, so push back
+					log.Debug("after message not ready, so push back", "reqId", req.Id().Hex())
+					s.queuedCount.Add(1)
+					s.queuedReq <- req
+				}
 			}
 		}
 	}()

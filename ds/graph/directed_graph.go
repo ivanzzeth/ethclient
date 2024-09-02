@@ -12,14 +12,16 @@ type DiGraph struct {
 	inDegree  map[interface{}]int
 	queue     []interface{}
 	isInQueue map[interface{}]bool
+	buffer    int
 	mutex     sync.Mutex
 }
 
-func NewDirectedGraph() *DiGraph {
+func NewDirectedGraph(buffer int) *DiGraph {
 	return &DiGraph{
 		graph:     make(map[interface{}]map[interface{}]int),
 		inDegree:  make(map[interface{}]int),
 		isInQueue: make(map[interface{}]bool),
+		buffer:    buffer,
 	}
 }
 
@@ -77,7 +79,7 @@ func (g *DiGraph) delEdge(from, to interface{}) {
 
 // vertex will be deleted after consuming
 func (g *DiGraph) Pipeline() <-chan interface{} {
-	output := make(chan interface{}, 10)
+	output := make(chan interface{}, g.buffer)
 
 	go func() {
 		for {
