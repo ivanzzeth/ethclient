@@ -5,5 +5,6 @@ type Sequencer interface {
 	// block if no any msgs return
 	PopMsg() (Request, error)
 	PeekMsg() (Request, error)
-	QueuedMsgCount() (uint, error)
+	QueuedMsgCount() (int, error)
+	PendingMsgCount() (int, error)
 }

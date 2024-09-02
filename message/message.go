@@ -30,7 +30,7 @@ type Request struct {
 
 	AccessList types.AccessList // EIP-2930 access list.
 
-	AfterMsg common.Hash // message id. Used for making sure the msg was executed after it.
+	AfterMsg *common.Hash // message id. Used for making sure the msg was executed after it.
 }
 
 type MessageStatus uint8

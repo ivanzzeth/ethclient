@@ -5,6 +5,7 @@ import (
 	"sync"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/log"
 )
 
 var _ Storage = &MemoryStorage{}
@@ -18,6 +19,7 @@ func NewMemoryStorage() (*MemoryStorage, error) {
 }
 
 func (s *MemoryStorage) AddMsg(req Request) error {
+	log.Debug("MemoryStorage AddMsg", "req", req)
 	s.store.Store(req.id, Message{
 		Req:    &req,
 		Status: MessageStatusPending,
@@ -26,6 +28,8 @@ func (s *MemoryStorage) AddMsg(req Request) error {
 }
 
 func (s *MemoryStorage) GetMsg(msgId common.Hash) (Message, error) {
+	// log.Debug("MemoryStorage GetMsg", "msgId", msgId.Hex())
+
 	msg, ok := s.store.Load(msgId)
 	if !ok {
 		return Message{}, fmt.Errorf("not found")
@@ -50,6 +54,8 @@ func (s *MemoryStorage) UpdateResponse(msgId common.Hash, resp Response) error {
 }
 
 func (s *MemoryStorage) UpdateMsgStatus(msgId common.Hash, status MessageStatus) error {
+	log.Debug("MemoryStorage UpdateMsgStatus", "msgId", msgId.Hex(), "status", status)
+
 	msg, err := s.GetMsg(msgId)
 	if err != nil {
 		return err
