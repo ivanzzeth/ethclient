@@ -21,11 +21,15 @@ func NewMemoryStorage() (*MemoryStorage, error) {
 func (s *MemoryStorage) AddMsg(req Request) error {
 	log.Debug("MemoryStorage AddMsg", "req", req)
 	s.store.Store(req.id, Message{
-		Req:               &req,
-		NextExecutionTime: req.StartTime,
-		Status:            MessageStatusSubmitted,
+		Req:    &req,
+		Status: MessageStatusSubmitted,
 	})
 	return nil
+}
+
+func (s *MemoryStorage) HasMsg(msgId common.Hash) bool {
+	_, ok := s.store.Load(msgId)
+	return ok
 }
 
 func (s *MemoryStorage) GetMsg(msgId common.Hash) (Message, error) {

@@ -178,6 +178,13 @@ func Test_Sequencer_Concurrent(t *testing.T) {
 	test_Sequencer_Concurrent(t, client)
 }
 
+func Test_Schedule_StartTime(t *testing.T) {
+	client := setUpClient(t)
+	defer client.Close()
+
+	test_Schedule_StartTime(t, client)
+}
+
 func testBatchSendMsg(t *testing.T, client *Client) {
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
 	defer cancel()
@@ -577,4 +584,42 @@ func test_Sequencer_Concurrent(t *testing.T, client *Client) {
 	}
 
 	assert.True(t, sort.IsSorted(sort.IntSlice(nonceRes)))
+}
+
+func test_Schedule_StartTime(t *testing.T, client *Client) {
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
+	defer cancel()
+
+	buffer := 10
+	mesgsChan := make(chan message.Request, buffer)
+	msgRespChan := client.BatchSendMsg(ctx, mesgsChan)
+
+	go func() {
+		mesgsChan <- *message.AssignMessageId(&message.Request{
+			From:      addr,
+			To:        &addr,
+			StartTime: time.Now().Add(5 * time.Second).UnixNano(),
+		})
+
+		mesgsChan <- *message.AssignMessageId(&message.Request{
+			From: addr,
+			To:   &addr,
+			// StartTime:      time.Now().Add(5 * time.Second).UnixNano(),
+			ExpirationTime: time.Now().UnixNano() - int64(5*time.Second),
+		})
+
+		mesgsChan <- *message.AssignMessageId(&message.Request{
+			From:           addr,
+			To:             &addr,
+			ExpirationTime: time.Now().Add(10 * time.Second).UnixNano(),
+			Interval:       2 * time.Second,
+		})
+
+		time.Sleep(20 * time.Second)
+		close(mesgsChan)
+	}()
+
+	for resp := range msgRespChan {
+		t.Log("execution resp: ", resp)
+	}
 }

@@ -6,6 +6,7 @@ import (
 
 type Storage interface {
 	AddMsg(req Request) error
+	HasMsg(msgId common.Hash) bool
 	GetMsg(msgId common.Hash) (Message, error)
 	UpdateMsg(msg Message) error
 	UpdateResponse(msgId common.Hash, resp Response) error

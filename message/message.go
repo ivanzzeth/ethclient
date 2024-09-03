@@ -11,10 +11,11 @@ import (
 )
 
 type Message struct {
-	Req               *Request
-	Resp              *Response // not nil if inflight
-	NextExecutionTime time.Time
-	Status            MessageStatus
+	Root   *common.Hash
+	Parent *common.Hash // it's created by parent if not nil
+	Req    *Request
+	Resp   *Response // not nil if inflight
+	Status MessageStatus
 }
 
 func (m *Message) Id() common.Hash {
@@ -36,8 +37,8 @@ type Request struct {
 	SimulationOn bool // contains return data of msg call if true
 	// ONLY available on function BatchSendMsg
 	AfterMsg       *common.Hash  // message id. Used for making sure the msg was executed after it.
-	StartTime      time.Time     // the msg was executed after the time. It's useful for one-time task.
-	ExpirationTime time.Time     // the msg will be not included on-chain if timeout.
+	StartTime      int64         // the msg was executed after the time. It's useful for one-time task.
+	ExpirationTime int64         // the msg will be not included on-chain if timeout.
 	Interval       time.Duration // the msg will be executed every interval.
 }
 

@@ -159,8 +159,21 @@ func (c *Client) BatchSendMsg(ctx context.Context, msgs <-chan message.Request) 
 
 	scheduleChan := make(chan message.Request, c.msgBuffer)
 
+	go c.schedule(msgs, scheduleChan, msgResChan)
+
+	go c.sequence(scheduleChan, msgResChan)
+
+	go c.broadcast(ctx, msgResChan)
+
+	return msgResChan
+}
+
+func (c *Client) schedule(msgs <-chan message.Request, scheduleChan chan<- message.Request, msgResChan chan<- message.Response) {
+	handleChan := make(chan message.Request, c.msgBuffer)
+
 	go func() {
 		for msg := range msgs {
+			log.Debug("start scheduling msg...", "msgId", msg.Id())
 			if msg.Id() == common.BytesToHash([]byte{}) {
 				msgResChan <- message.Response{
 					Id:  msg.Id(),
@@ -168,37 +181,149 @@ func (c *Client) BatchSendMsg(ctx context.Context, msgs <-chan message.Request) 
 				}
 				continue
 			}
+			handleChan <- msg
+		}
 
-			err := c.msgStore.AddMsg(msg)
+		close(handleChan)
+	}()
+
+	for req := range handleChan {
+		log.Debug("scheduler handle msg...", "msgId", req.Id())
+
+		if !c.msgStore.HasMsg(req.Id()) {
+			err := c.msgStore.AddMsg(req)
 			if err != nil {
 				msgResChan <- message.Response{
-					Id:  msg.Id(),
-					Err: fmt.Errorf("no msgId provided"),
-				}
-			}
-
-			// TODO: Schedule
-
-			scheduleChan <- msg
-
-			err = c.msgStore.UpdateMsgStatus(msg.Id(), message.MessageStatusScheduled)
-			if err != nil {
-				msgResChan <- message.Response{
-					Id:  msg.Id(),
+					Id:  req.Id(),
 					Err: fmt.Errorf("no msgId provided"),
 				}
 			}
 		}
 
-		log.Debug("close scheduler...")
-		close(scheduleChan)
-	}()
+		msg, err := c.msgStore.GetMsg(req.Id())
+		if err != nil {
+			msgResChan <- message.Response{
+				Id:  req.Id(),
+				Err: err,
+			}
+		}
 
-	go c.sequence(scheduleChan, msgResChan)
+		now := time.Now().UnixNano()
 
-	go c.broadcast(ctx, msgResChan)
+		if msg.Req.Interval != 0 {
+			if msg.Req.StartTime == 0 {
+				msg.Req.StartTime = now
+			}
+			err = c.msgStore.UpdateMsg(msg)
+			if err != nil {
+				msgResChan <- message.Response{
+					Id:  req.Id(),
+					Err: err,
+				}
+			}
+		}
 
-	return msgResChan
+		if msg.Req.ExpirationTime != 0 && msg.Req.ExpirationTime < now {
+			// timeout
+			err = c.msgStore.UpdateMsgStatus(req.Id(), message.MessageStatusExpired)
+			if err != nil {
+				msgResChan <- message.Response{
+					Id:  req.Id(),
+					Err: err,
+				}
+				continue
+			}
+
+			msgResChan <- message.Response{
+				Id:  req.Id(),
+				Err: fmt.Errorf("timeout"),
+			}
+
+			continue
+		}
+
+		req = *msg.Req
+
+		if msg.Req.StartTime >= now {
+			log.Debug("scheduler found it's not time for executing the msg", "msg", msg.Id().Hex())
+			go func() {
+				duration := msg.Req.StartTime - time.Now().UnixNano()
+				time.Sleep(time.Duration(duration))
+				handleChan <- *msg.Req
+			}()
+			continue
+		}
+
+		scheduleChan <- *msg.Req
+
+		err = c.msgStore.UpdateMsgStatus(req.Id(), message.MessageStatusScheduled)
+		if err != nil {
+			msgResChan <- message.Response{
+				Id:  req.Id(),
+				Err: fmt.Errorf("no msgId provided"),
+			}
+		}
+
+		if msg.Req.Interval != 0 {
+			newReq := &message.Request{
+				From:                  req.From,
+				To:                    req.To,
+				Value:                 req.Value,
+				Gas:                   req.Gas,
+				GasOnEstimationFailed: req.GasOnEstimationFailed,
+				GasPrice:              req.GasPrice,
+				Data:                  req.Data,
+				AccessList:            req.AccessList,
+				SimulationOn:          req.SimulationOn,
+
+				StartTime:      now + int64(req.Interval),
+				ExpirationTime: req.ExpirationTime,
+				Interval:       req.Interval,
+			}
+
+			message.AssignMessageId(newReq)
+			log.Debug("scheduler creates new one for long-term ticker task", "msg", msg.Id().Hex(), "new_msg", newReq.Id().Hex())
+
+			err = c.msgStore.AddMsg(*newReq)
+			if err != nil {
+				msgResChan <- message.Response{
+					Id:  newReq.Id(),
+					Err: err,
+				}
+				continue
+			}
+
+			newMsg, err := c.msgStore.GetMsg(newReq.Id())
+			if err != nil {
+				msgResChan <- message.Response{
+					Id:  newReq.Id(),
+					Err: err,
+				}
+				continue
+			}
+			parent := req.Id()
+			newMsg.Parent = &parent
+			if msg.Root != nil {
+				newMsg.Root = msg.Root
+			} else {
+				newMsg.Root = &parent
+			}
+
+			err = c.msgStore.UpdateMsg(newMsg)
+			if err != nil {
+				msgResChan <- message.Response{
+					Id:  newReq.Id(),
+					Err: err,
+				}
+				continue
+			}
+
+			handleChan <- *newReq
+		}
+	}
+
+	log.Debug("close scheduler...")
+	close(scheduleChan)
 }
 
 func (c *Client) sequence(msgs <-chan message.Request, msgResChan chan<- message.Response) {
