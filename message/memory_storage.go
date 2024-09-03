@@ -21,8 +21,9 @@ func NewMemoryStorage() (*MemoryStorage, error) {
 func (s *MemoryStorage) AddMsg(req Request) error {
 	log.Debug("MemoryStorage AddMsg", "req", req)
 	s.store.Store(req.id, Message{
-		Req:    &req,
-		Status: MessageStatusPending,
+		Req:               &req,
+		NextExecutionTime: req.StartTime,
+		Status:            MessageStatusSubmitted,
 	})
 	return nil
 }

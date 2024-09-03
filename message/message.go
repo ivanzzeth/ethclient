@@ -2,6 +2,7 @@ package message
 
 import (
 	"math/big"
+	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -10,9 +11,10 @@ import (
 )
 
 type Message struct {
-	Req    *Request
-	Resp   *Response // not nil if inflight
-	Status MessageStatus
+	Req               *Request
+	Resp              *Response // not nil if inflight
+	NextExecutionTime time.Time
+	Status            MessageStatus
 }
 
 func (m *Message) Id() common.Hash {
@@ -20,25 +22,30 @@ func (m *Message) Id() common.Hash {
 }
 
 type Request struct {
-	id       common.Hash
-	From     common.Address  // the sender of the 'transaction'
-	To       *common.Address // the destination contract (nil for contract creation)
-	Value    *big.Int        // amount of wei sent along with the call
-	Gas      uint64          // if 0, the call executes with near-infinite gas
-	GasPrice *big.Int        // wei <-> gas exchange ratio
-	Data     []byte          // input data, usually an ABI-encoded contract method invocation
+	id                    common.Hash
+	From                  common.Address  // the sender of the 'transaction'
+	To                    *common.Address // the destination contract (nil for contract creation)
+	Value                 *big.Int        // amount of wei sent along with the call
+	Gas                   uint64          // if 0, the call executes with near-infinite gas
+	GasOnEstimationFailed *uint64         // how much gas you wanna provide when the msg estimation failed. As much as possible, so you can debug on-chain
+	GasPrice              *big.Int        // wei <-> gas exchange ratio
+	Data                  []byte          // input data, usually an ABI-encoded contract method invocation
 
 	AccessList types.AccessList // EIP-2930 access list.
 
 	SimulationOn bool // contains return data of msg call if true
-	// ONLY available on function batchSendMsg
-	AfterMsg *common.Hash // message id. Used for making sure the msg was executed after it.
+	// ONLY available on function BatchSendMsg
+	AfterMsg       *common.Hash  // message id. Used for making sure the msg was executed after it.
+	StartTime      time.Time     // the msg was executed after the time. It's useful for one-time task.
+	ExpirationTime time.Time     // the msg will be not included on-chain if timeout.
+	Interval       time.Duration // the msg will be executed every interval.
 }
 
 type MessageStatus uint8
 
 const (
-	MessageStatusPending MessageStatus = iota
+	MessageStatusSubmitted MessageStatus = iota
+	MessageStatusReadyToQueue
 	MessageStatusQueued
 	MessageStatusNonceAssigned
 	MessageStatusInflight // Broadcasted but not on chain
@@ -46,6 +53,7 @@ const (
 	MessageStatusFinalized
 	// it was broadcasted but not included on-chain until timeout, so the nonce was released
 	MessageStatusNonceReleased
+	MessageStatusExpired
 )
 
 type Response struct {

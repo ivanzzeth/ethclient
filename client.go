@@ -256,17 +256,7 @@ func (c *Client) SendMsg(ctx context.Context, msg message.Request) (signedTx *ty
 }
 
 func (c *Client) sendMsg(ctx context.Context, msg message.Request) (signedTx *types.Transaction, err error) {
-	ethMesg := ethereum.CallMsg{
-		From:       msg.From,
-		To:         msg.To,
-		Gas:        msg.Gas,
-		GasPrice:   msg.GasPrice,
-		Value:      msg.Value,
-		Data:       msg.Data,
-		AccessList: msg.AccessList,
-	}
-
-	tx, err := c.NewTransaction(ctx, ethMesg)
+	tx, err := c.NewTransaction(ctx, msg)
 	if err != nil {
 		return nil, fmt.Errorf("NewTransaction err: %v", err)
 	}
@@ -320,20 +310,34 @@ func (c *Client) sendMsg(ctx context.Context, msg message.Request) (signedTx *ty
 	return signedTx, nil
 }
 
-func (c *Client) NewTransaction(ctx context.Context, msg ethereum.CallMsg) (*types.Transaction, error) {
+func (c *Client) NewTransaction(ctx context.Context, msg message.Request) (*types.Transaction, error) {
 	if msg.To == nil {
 		to := common.HexToAddress("0x0")
 		msg.To = &to
 	}
 
 	if msg.Gas == 0 {
-		gas, err := c.EstimateGas(ctx, msg)
-		if err != nil {
-			return nil, err
+		ethMesg := ethereum.CallMsg{
+			From:       msg.From,
+			To:         msg.To,
+			Gas:        msg.Gas,
+			GasPrice:   msg.GasPrice,
+			Value:      msg.Value,
+			Data:       msg.Data,
+			AccessList: msg.AccessList,
 		}
 
-		// Multiplier 1.5
-		msg.Gas = gas * 1500 / 1000
+		gas, err := c.EstimateGas(ctx, ethMesg)
+		if err != nil {
+			if msg.GasOnEstimationFailed == nil {
+				return nil, err
+			}
+
+			msg.Gas = *msg.GasOnEstimationFailed
+		} else {
+			// Multiplier 1.5
+			msg.Gas = gas * 1500 / 1000
+		}
 	}
 
 	if msg.GasPrice == nil || msg.GasPrice.Uint64() == 0 {
