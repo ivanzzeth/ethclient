@@ -184,8 +184,12 @@ func (c *Client) ReplayMsg(ctx context.Context, msgId common.Hash) (newMsgId com
 	}
 
 	copiedReq := msg.Req.Copy()
+
+	message.AssignMessageId(copiedReq)
+
 	c.reqChannel <- *copiedReq
 
+	newMsgId = copiedReq.Id()
 	return
 }
 
