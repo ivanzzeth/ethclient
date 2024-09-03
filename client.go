@@ -171,7 +171,7 @@ func (c *Client) NewMethodData(a abi.ABI, methodName string, args ...interface{}
 	return a.Pack(methodName, args...)
 }
 
-func (c *Client) BatchSendMsg(ctx context.Context, req message.Request) {
+func (c *Client) ScheduleMsg(ctx context.Context, req message.Request) {
 	c.reqChannel <- req
 }
 
@@ -419,7 +419,7 @@ func (c *Client) callAndSendMsg(ctx context.Context, msg message.Request) (*type
 
 func (c *Client) CallMsg(ctx context.Context, msg message.Request, blockNumber *big.Int) (returnData []byte, err error) {
 	if msg.AfterMsg != nil {
-		return nil, fmt.Errorf("field AfterMsg ONLY available on calling BatchSendMsg")
+		return nil, fmt.Errorf("field AfterMsg ONLY available on calling ScheduleMsg")
 	}
 
 	ethMesg := ethereum.CallMsg{
@@ -437,7 +437,7 @@ func (c *Client) CallMsg(ctx context.Context, msg message.Request, blockNumber *
 
 func (c *Client) SendMsg(ctx context.Context, msg message.Request) (signedTx *types.Transaction, err error) {
 	if msg.AfterMsg != nil {
-		return nil, fmt.Errorf("field AfterMsg ONLY available on calling BatchSendMsg")
+		return nil, fmt.Errorf("field AfterMsg ONLY available on calling ScheduleMsg")
 	}
 
 	err = c.msgStore.AddMsg(msg)

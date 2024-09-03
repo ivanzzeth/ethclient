@@ -69,7 +69,7 @@ func main() {
 
 	// Send multiple transactions.
 	mesgs := make(chan ethclient.Message)
-	txs, errs := client.BatchSendMsg(ctx, mesgs)
+	txs, errs := client.ScheduleMsg(ctx, mesgs)
 	go func() {
 		for i := 0; i < 5; i++ {
 			mesgs <- ethclient.Message{

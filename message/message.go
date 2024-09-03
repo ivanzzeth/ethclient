@@ -35,7 +35,7 @@ type Request struct {
 	AccessList types.AccessList // EIP-2930 access list.
 
 	SimulationOn bool // contains return data of msg call if true
-	// ONLY available on function BatchSendMsg
+	// ONLY available on function ScheduleMsg
 	AfterMsg       *common.Hash  // message id. Used for making sure the msg was executed after it.
 	StartTime      int64         // the msg was executed after the time. It's useful for one-time task.
 	ExpirationTime int64         // the msg will be not included on-chain if timeout.
@@ -60,7 +60,7 @@ const (
 type Response struct {
 	Id         common.Hash
 	Tx         *types.Transaction
-	ReturnData []byte // not nil if using SafeBatchSendMsg and no err
+	ReturnData []byte // not nil if using SafeScheduleMsg and no err
 	Err        error
 }
 

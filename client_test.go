@@ -86,17 +86,17 @@ func TestBatchSendMsg(t *testing.T) {
 	client := setUpClient(t)
 	defer client.Close()
 
-	testBatchSendMsg(t, client)
+	testScheduleMsg(t, client)
 }
 
 func Test_BatchSendMsg_RandomlyReverted(t *testing.T) {
 	client := setUpClient(t)
 	defer client.Close()
 
-	test_BatchSendMsg_RandomlyReverted(t, client)
+	test_ScheduleMsg_RandomlyReverted(t, client)
 }
 
-func Test_BatchSendMsg_RandomlyReverted_WithRedis(t *testing.T) {
+func Test_ScheduleMsg_RandomlyReverted_WithRedis(t *testing.T) {
 	client := setUpClient(t)
 	defer client.Close()
 
@@ -117,7 +117,7 @@ func Test_BatchSendMsg_RandomlyReverted_WithRedis(t *testing.T) {
 
 	client.SetNonceManager(nm)
 
-	test_BatchSendMsg_RandomlyReverted(t, client)
+	test_ScheduleMsg_RandomlyReverted(t, client)
 }
 
 func TestCallContract(t *testing.T) {
@@ -185,7 +185,7 @@ func Test_Schedule_StartTime(t *testing.T) {
 	test_Schedule_StartTime(t, client)
 }
 
-func testBatchSendMsg(t *testing.T, client *Client) {
+func testScheduleMsg(t *testing.T, client *Client) {
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
 	defer cancel()
 
@@ -200,7 +200,7 @@ func testBatchSendMsg(t *testing.T, client *Client) {
 
 			message.AssignMessageId(req)
 
-			client.BatchSendMsg(ctx, *req)
+			client.ScheduleMsg(ctx, *req)
 			t.Log("Write MSG to channel")
 		}
 
@@ -223,7 +223,7 @@ func testBatchSendMsg(t *testing.T, client *Client) {
 	t.Log("Exit")
 }
 
-func test_BatchSendMsg_RandomlyReverted(t *testing.T, client *Client) {
+func test_ScheduleMsg_RandomlyReverted(t *testing.T, client *Client) {
 	buffer := 1000
 
 	client.SetMsgBuffer(buffer)
@@ -262,7 +262,7 @@ func test_BatchSendMsg_RandomlyReverted(t *testing.T, client *Client) {
 				},
 			)
 
-			client.BatchSendMsg(ctx, *msg)
+			client.ScheduleMsg(ctx, *msg)
 			wantErrMap[msg.Id()] = number%4 == 0
 
 			t.Logf("Write MSG to channel, block: %v, blockMod: %v, msgId: %v", number, number%4, msg.Id().Hex())
@@ -551,7 +551,7 @@ func test_Sequencer_Concurrent(t *testing.T, client *Client) {
 				}
 				msg.SetIdWithNonce(int64(nonce))
 
-				client.BatchSendMsg(ctx, *msg)
+				client.ScheduleMsg(ctx, *msg)
 			}
 		}
 
@@ -586,20 +586,20 @@ func test_Schedule_StartTime(t *testing.T, client *Client) {
 	defer cancel()
 
 	go func() {
-		client.BatchSendMsg(ctx, *message.AssignMessageId(&message.Request{
+		client.ScheduleMsg(ctx, *message.AssignMessageId(&message.Request{
 			From:      addr,
 			To:        &addr,
 			StartTime: time.Now().Add(5 * time.Second).UnixNano(),
 		}))
 
-		client.BatchSendMsg(ctx, *message.AssignMessageId(&message.Request{
+		client.ScheduleMsg(ctx, *message.AssignMessageId(&message.Request{
 			From: addr,
 			To:   &addr,
 			// StartTime:      time.Now().Add(5 * time.Second).UnixNano(),
 			ExpirationTime: time.Now().UnixNano() - int64(5*time.Second),
 		}))
 
-		client.BatchSendMsg(ctx, *message.AssignMessageId(&message.Request{
+		client.ScheduleMsg(ctx, *message.AssignMessageId(&message.Request{
 			From:           addr,
 			To:             &addr,
 			ExpirationTime: time.Now().Add(10 * time.Second).UnixNano(),
