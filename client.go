@@ -152,26 +152,6 @@ func (c *Client) NewMethodData(a abi.ABI, methodName string, args ...interface{}
 	return a.Pack(methodName, args...)
 }
 
-func (c *Client) SafeBatchSendMsg(ctx context.Context, msgs <-chan message.Request) <-chan message.Response {
-	msgResChan := make(chan message.Response, c.msgBuffer)
-	go func() {
-		for msg := range msgs {
-			tx, returnData, err := c.SafeSendMsg(ctx, msg)
-			// TODO: Release nonce...
-			msgResChan <- message.Response{
-				Id:         msg.Id(),
-				Tx:         tx,
-				ReturnData: returnData,
-				Err:        err,
-			}
-		}
-
-		close(msgResChan)
-	}()
-
-	return msgResChan
-}
-
 func (c *Client) BatchSendMsg(ctx context.Context, msgs <-chan message.Request) <-chan message.Response {
 	msgResChan := make(chan message.Response, c.msgBuffer)
 	go func() {
@@ -204,15 +184,51 @@ func (c *Client) BatchSendMsg(ctx context.Context, msgs <-chan message.Request) 
 				continue
 			}
 
-			tx, err := c.sendMsg(ctx, msg)
-			msgResChan <- message.Response{Id: msg.Id(), Tx: tx, Err: err}
+			var (
+				returnData []byte
+				tx         *types.Transaction
+			)
+			if msg.SimulationOn {
+				tx, returnData, err = c.callAndSendMsg(ctx, msg)
+			} else {
+				tx, err = c.sendMsg(ctx, msg)
+			}
+			msgResChan <- message.Response{Id: msg.Id(), Tx: tx, ReturnData: returnData, Err: err}
 		}
 	}()
 
 	return msgResChan
 }
 
+func (c *Client) CallAndSendMsg(ctx context.Context, msg message.Request) (*types.Transaction, []byte, error) {
+	err := c.msgStore.AddMsg(msg)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	tx, returnData, err := c.callAndSendMsg(ctx, msg)
+	return tx, returnData, err
+}
+
+func (c *Client) callAndSendMsg(ctx context.Context, msg message.Request) (*types.Transaction, []byte, error) {
+	returnData, err := c.CallMsg(ctx, msg, nil)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	tx, err := c.sendMsg(ctx, msg)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return tx, returnData, err
+}
+
 func (c *Client) CallMsg(ctx context.Context, msg message.Request, blockNumber *big.Int) (returnData []byte, err error) {
+	if msg.AfterMsg != nil {
+		return nil, fmt.Errorf("field AfterMsg ONLY available on calling BatchSendMsg")
+	}
+
 	ethMesg := ethereum.CallMsg{
 		From:       msg.From,
 		To:         msg.To,
@@ -226,21 +242,11 @@ func (c *Client) CallMsg(ctx context.Context, msg message.Request, blockNumber *
 	return c.Client.CallContract(ctx, ethMesg, blockNumber)
 }
 
-func (c *Client) SafeSendMsg(ctx context.Context, msg message.Request) (*types.Transaction, []byte, error) {
-	returnData, err := c.CallMsg(ctx, msg, nil)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	tx, err := c.SendMsg(ctx, msg)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	return tx, returnData, err
-}
-
 func (c *Client) SendMsg(ctx context.Context, msg message.Request) (signedTx *types.Transaction, err error) {
+	if msg.AfterMsg != nil {
+		return nil, fmt.Errorf("field AfterMsg ONLY available on calling BatchSendMsg")
+	}
+
 	err = c.msgStore.AddMsg(msg)
 	if err != nil {
 		return nil, err
