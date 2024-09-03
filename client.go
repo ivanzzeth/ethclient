@@ -177,6 +177,18 @@ func (c *Client) ScheduleMsg(ctx context.Context, req message.Request) {
 	c.reqChannel <- req
 }
 
+func (c *Client) ReplayMsg(ctx context.Context, msgId common.Hash) (newMsgId common.Hash, err error) {
+	msg, err := c.msgStore.GetMsg(msgId)
+	if err != nil {
+		return
+	}
+
+	copiedReq := msg.Req.Copy()
+	c.reqChannel <- *copiedReq
+
+	return
+}
+
 func (c *Client) BatchSendResponse() <-chan message.Response {
 	return c.respChannel
 }
@@ -277,21 +289,10 @@ func (c *Client) schedule(msgResChan chan<- message.Response) {
 		}
 
 		if msg.Req.Interval != 0 {
-			newReq := &message.Request{
-				From:                  req.From,
-				To:                    req.To,
-				Value:                 req.Value,
-				Gas:                   req.Gas,
-				GasOnEstimationFailed: req.GasOnEstimationFailed,
-				GasPrice:              req.GasPrice,
-				Data:                  req.Data,
-				AccessList:            req.AccessList,
-				SimulationOn:          req.SimulationOn,
+			newReq := req.Copy()
 
-				StartTime:      now + int64(req.Interval),
-				ExpirationTime: req.ExpirationTime,
-				Interval:       req.Interval,
-			}
+			newReq.AfterMsg = nil
+			newReq.StartTime = now + int64(req.Interval)
 
 			message.AssignMessageId(newReq)
 			log.Debug("scheduler creates new one for long-term ticker task", "msg", msg.Id().Hex(), "new_msg", newReq.Id().Hex())

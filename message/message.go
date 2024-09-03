@@ -92,3 +92,41 @@ func (q *Request) SetId(id common.Hash) {
 func (q *Request) SetIdWithNonce(nonce int64) {
 	q.id = *GenerateMessageIdByNonce(nonce)
 }
+
+func (q *Request) Copy() *Request {
+	var (
+		gasOnEstimationFailed uint64
+		value, gasPrice       *big.Int
+	)
+
+	if q.GasOnEstimationFailed != nil {
+		gasOnEstimationFailed = *q.GasOnEstimationFailed
+	}
+
+	if q.Value != nil {
+		value = big.NewInt(0).Set(q.Value)
+	}
+
+	if q.GasPrice != nil {
+		gasPrice = big.NewInt(0).Set(q.GasPrice)
+	}
+
+	req := Request{
+		From:                  q.From,
+		To:                    q.To,
+		Value:                 value,
+		Gas:                   q.Gas,
+		GasOnEstimationFailed: &gasOnEstimationFailed,
+		GasPrice:              gasPrice,
+		Data:                  q.Data,
+		AccessList:            q.AccessList,
+		SimulationOn:          q.SimulationOn,
+
+		AfterMsg:       q.AfterMsg,
+		StartTime:      q.StartTime,
+		ExpirationTime: q.ExpirationTime,
+		Interval:       q.Interval,
+	}
+
+	return &req
+}
