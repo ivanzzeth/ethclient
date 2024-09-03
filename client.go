@@ -25,6 +25,8 @@ type Client struct {
 	*ethclient.Client
 	rpcClient *rpc.Client
 	nonce.Manager
+	reqChannel   chan message.Request
+	respChannel  chan message.Response
 	msgBuffer    int
 	msgStore     message.Storage
 	msgSequencer message.Sequencer
@@ -63,19 +65,35 @@ func NewClient(c *rpc.Client) (*Client, error) {
 		return nil, err
 	}
 
-	return &Client{
+	cli := &Client{
 		Client:       ethc,
 		rpcClient:    c,
+		reqChannel:   make(chan message.Request, DefaultMsgBuffer),
+		respChannel:  make(chan message.Response, DefaultMsgBuffer),
 		msgBuffer:    DefaultMsgBuffer,
 		msgStore:     msgStore,
 		msgSequencer: msgSequencer,
 		Manager:      nm,
 		Subscriber:   subscriber,
-	}, nil
+	}
+
+	go cli.sendMsgTask(context.Background())
+
+	return cli, nil
 }
 
 func (c *Client) Close() {
 	c.Client.Close()
+
+	v, needClose := <-c.respChannel
+	if needClose {
+		c.respChannel <- v
+		close(c.respChannel)
+	}
+}
+
+func (c *Client) CloseSendMsg() {
+	close(c.reqChannel)
 }
 
 // RawClient returns underlying ethclient
@@ -153,19 +171,24 @@ func (c *Client) NewMethodData(a abi.ABI, methodName string, args ...interface{}
 	return a.Pack(methodName, args...)
 }
 
-func (c *Client) BatchSendMsg(ctx context.Context, msgs <-chan message.Request) <-chan message.Response {
-	// Pipepline: msgs => scheduler => sequencer => broadcaster
-	msgResChan := make(chan message.Response, c.msgBuffer)
+func (c *Client) BatchSendMsg(ctx context.Context, req message.Request) {
+	c.reqChannel <- req
+}
+
+func (c *Client) BatchSendResponse() <-chan message.Response {
+	return c.respChannel
+}
+
+func (c *Client) sendMsgTask(ctx context.Context) {
+	// Pipepline: reqChannel => scheduler => sequencer => broadcaster
 
 	scheduleChan := make(chan message.Request, c.msgBuffer)
 
-	go c.schedule(msgs, scheduleChan, msgResChan)
+	go c.schedule(c.reqChannel, scheduleChan, c.respChannel)
 
-	go c.sequence(scheduleChan, msgResChan)
+	go c.sequence(scheduleChan, c.respChannel)
 
-	go c.broadcast(ctx, msgResChan)
-
-	return msgResChan
+	go c.broadcast(ctx, c.respChannel)
 }
 
 func (c *Client) schedule(msgs <-chan message.Request, scheduleChan chan<- message.Request, msgResChan chan<- message.Response) {

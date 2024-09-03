@@ -190,8 +190,6 @@ func testBatchSendMsg(t *testing.T, client *Client) {
 	defer cancel()
 
 	buffer := 10
-	mesgsChan := make(chan message.Request, buffer)
-	msgRespChan := client.BatchSendMsg(ctx, mesgsChan)
 	go func() {
 		for i := 0; i < 2*buffer; i++ {
 			to := common.HexToAddress("0x06514D014e997bcd4A9381bF0C4Dc21bD32718D4")
@@ -202,16 +200,16 @@ func testBatchSendMsg(t *testing.T, client *Client) {
 
 			message.AssignMessageId(req)
 
-			mesgsChan <- *req
+			client.BatchSendMsg(ctx, *req)
 			t.Log("Write MSG to channel")
 		}
 
 		time.Sleep(5 * time.Second)
 		t.Log("Close send channel")
-		close(mesgsChan)
+		client.CloseSendMsg()
 	}()
 
-	for resp := range msgRespChan {
+	for resp := range client.BatchSendResponse() {
 		tx := resp.Tx
 		err := resp.Err
 		var js []byte
@@ -246,8 +244,6 @@ func test_BatchSendMsg_RandomlyReverted(t *testing.T, client *Client) {
 
 	wantErrMap := make(map[common.Hash]bool, 0)
 
-	mesgsChan := make(chan message.Request, buffer)
-	msgRespChan := client.BatchSendMsg(ctx, mesgsChan)
 	go func() {
 		contractAbi := contracts.GetTestContractABI()
 
@@ -265,17 +261,19 @@ func test_BatchSendMsg_RandomlyReverted(t *testing.T, client *Client) {
 					Gas:  1000000,
 				},
 			)
-			mesgsChan <- *msg
+
+			client.BatchSendMsg(ctx, *msg)
 			wantErrMap[msg.Id()] = number%4 == 0
 
 			t.Logf("Write MSG to channel, block: %v, blockMod: %v, msgId: %v", number, number%4, msg.Id().Hex())
 		}
 
 		t.Log("Close send channel")
-		close(mesgsChan)
+
+		client.CloseSendMsg()
 	}()
 
-	for resp := range msgRespChan {
+	for resp := range client.BatchSendResponse() {
 		tx := resp.Tx
 		err := resp.Err
 
@@ -532,9 +530,6 @@ func test_Sequencer_Concurrent(t *testing.T, client *Client) {
 
 	t.Logf("shuffled nonces: %v", nonces)
 
-	msgChan := make(chan message.Request, 100)
-	respChan := client.BatchSendMsg(ctx, msgChan)
-
 	blockNumber, err := client.BlockNumber(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -556,15 +551,15 @@ func test_Sequencer_Concurrent(t *testing.T, client *Client) {
 				}
 				msg.SetIdWithNonce(int64(nonce))
 
-				msgChan <- *msg
+				client.BatchSendMsg(ctx, *msg)
 			}
 		}
 
 		time.Sleep(5 * time.Second)
-		close(msgChan)
+		client.CloseSendMsg()
 	}()
 
-	for resp := range respChan {
+	for resp := range client.BatchSendResponse() {
 		t.Logf("resp: %+v", resp)
 	}
 
@@ -590,36 +585,32 @@ func test_Schedule_StartTime(t *testing.T, client *Client) {
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
 	defer cancel()
 
-	buffer := 10
-	mesgsChan := make(chan message.Request, buffer)
-	msgRespChan := client.BatchSendMsg(ctx, mesgsChan)
-
 	go func() {
-		mesgsChan <- *message.AssignMessageId(&message.Request{
+		client.BatchSendMsg(ctx, *message.AssignMessageId(&message.Request{
 			From:      addr,
 			To:        &addr,
 			StartTime: time.Now().Add(5 * time.Second).UnixNano(),
-		})
+		}))
 
-		mesgsChan <- *message.AssignMessageId(&message.Request{
+		client.BatchSendMsg(ctx, *message.AssignMessageId(&message.Request{
 			From: addr,
 			To:   &addr,
 			// StartTime:      time.Now().Add(5 * time.Second).UnixNano(),
 			ExpirationTime: time.Now().UnixNano() - int64(5*time.Second),
-		})
+		}))
 
-		mesgsChan <- *message.AssignMessageId(&message.Request{
+		client.BatchSendMsg(ctx, *message.AssignMessageId(&message.Request{
 			From:           addr,
 			To:             &addr,
 			ExpirationTime: time.Now().Add(10 * time.Second).UnixNano(),
 			Interval:       2 * time.Second,
-		})
+		}))
 
 		time.Sleep(20 * time.Second)
-		close(mesgsChan)
+		client.CloseSendMsg()
 	}()
 
-	for resp := range msgRespChan {
+	for resp := range client.BatchSendResponse() {
 		t.Log("execution resp: ", resp)
 	}
 }
