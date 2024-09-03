@@ -25,13 +25,14 @@ type Client struct {
 	*ethclient.Client
 	rpcClient *rpc.Client
 	nonce.Manager
-	reqChannel   chan message.Request
-	respChannel  chan message.Response
-	msgBuffer    int
-	msgStore     message.Storage
-	msgSequencer message.Sequencer
-	abi          abi.ABI
-	signers      []bind.SignerFn // Method to use for signing the transaction (mandatory)
+	reqChannel      chan message.Request
+	scheduleChannel chan message.Request
+	respChannel     chan message.Response
+	msgBuffer       int
+	msgStore        message.Storage
+	msgSequencer    message.Sequencer
+	abi             abi.ABI
+	signers         []bind.SignerFn // Method to use for signing the transaction (mandatory)
 
 	Subscriber
 }
@@ -66,15 +67,16 @@ func NewClient(c *rpc.Client) (*Client, error) {
 	}
 
 	cli := &Client{
-		Client:       ethc,
-		rpcClient:    c,
-		reqChannel:   make(chan message.Request, DefaultMsgBuffer),
-		respChannel:  make(chan message.Response, DefaultMsgBuffer),
-		msgBuffer:    DefaultMsgBuffer,
-		msgStore:     msgStore,
-		msgSequencer: msgSequencer,
-		Manager:      nm,
-		Subscriber:   subscriber,
+		Client:          ethc,
+		rpcClient:       c,
+		reqChannel:      make(chan message.Request, DefaultMsgBuffer),
+		scheduleChannel: make(chan message.Request, DefaultMsgBuffer),
+		respChannel:     make(chan message.Response, DefaultMsgBuffer),
+		msgBuffer:       DefaultMsgBuffer,
+		msgStore:        msgStore,
+		msgSequencer:    msgSequencer,
+		Manager:         nm,
+		Subscriber:      subscriber,
 	}
 
 	go cli.sendMsgTask(context.Background())
@@ -182,36 +184,23 @@ func (c *Client) BatchSendResponse() <-chan message.Response {
 func (c *Client) sendMsgTask(ctx context.Context) {
 	// Pipepline: reqChannel => scheduler => sequencer => broadcaster
 
-	scheduleChan := make(chan message.Request, c.msgBuffer)
+	go c.schedule(c.respChannel)
 
-	go c.schedule(c.reqChannel, scheduleChan, c.respChannel)
-
-	go c.sequence(scheduleChan, c.respChannel)
+	go c.sequence(c.respChannel)
 
 	go c.broadcast(ctx, c.respChannel)
 }
 
-func (c *Client) schedule(msgs <-chan message.Request, scheduleChan chan<- message.Request, msgResChan chan<- message.Response) {
-	handleChan := make(chan message.Request, c.msgBuffer)
-
-	go func() {
-		for msg := range msgs {
-			log.Debug("start scheduling msg...", "msgId", msg.Id())
-			if msg.Id() == common.BytesToHash([]byte{}) {
-				msgResChan <- message.Response{
-					Id:  msg.Id(),
-					Err: fmt.Errorf("no msgId provided"),
-				}
-				continue
+func (c *Client) schedule(msgResChan chan<- message.Response) {
+	for req := range c.reqChannel {
+		log.Debug("start scheduling msg...", "msgId", req.Id())
+		if req.Id() == common.BytesToHash([]byte{}) {
+			msgResChan <- message.Response{
+				Id:  req.Id(),
+				Err: fmt.Errorf("no msgId provided"),
 			}
-			handleChan <- msg
+			continue
 		}
-
-		close(handleChan)
-	}()
-
-	for req := range handleChan {
-		log.Debug("scheduler handle msg...", "msgId", req.Id())
 
 		if !c.msgStore.HasMsg(req.Id()) {
 			err := c.msgStore.AddMsg(req)
@@ -272,12 +261,12 @@ func (c *Client) schedule(msgs <-chan message.Request, scheduleChan chan<- messa
 			go func() {
 				duration := msg.Req.StartTime - time.Now().UnixNano()
 				time.Sleep(time.Duration(duration))
-				handleChan <- *msg.Req
+				c.reqChannel <- *msg.Req
 			}()
 			continue
 		}
 
-		scheduleChan <- *msg.Req
+		c.scheduleChannel <- *msg.Req
 
 		err = c.msgStore.UpdateMsgStatus(req.Id(), message.MessageStatusScheduled)
 		if err != nil {
@@ -341,16 +330,16 @@ func (c *Client) schedule(msgs <-chan message.Request, scheduleChan chan<- messa
 				continue
 			}
 
-			handleChan <- *newReq
+			c.reqChannel <- *newReq
 		}
 	}
 
 	log.Debug("close scheduler...")
-	close(scheduleChan)
+	close(c.scheduleChannel)
 }
 
-func (c *Client) sequence(msgs <-chan message.Request, msgResChan chan<- message.Response) {
-	for msg := range msgs {
+func (c *Client) sequence(msgResChan chan<- message.Response) {
+	for msg := range c.scheduleChannel {
 		resp := message.Response{Id: msg.Id()}
 
 		err := c.msgSequencer.PushMsg(msg)
