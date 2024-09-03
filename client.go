@@ -3,6 +3,7 @@ package ethclient
 import (
 	"context"
 	"crypto/ecdsa"
+	"errors"
 	"fmt"
 	"math/big"
 	"time"
@@ -153,51 +154,95 @@ func (c *Client) NewMethodData(a abi.ABI, methodName string, args ...interface{}
 }
 
 func (c *Client) BatchSendMsg(ctx context.Context, msgs <-chan message.Request) <-chan message.Response {
+	// Pipepline: msgs => scheduler => sequencer => broadcaster
 	msgResChan := make(chan message.Response, c.msgBuffer)
+
+	scheduleChan := make(chan message.Request, c.msgBuffer)
+
 	go func() {
 		for msg := range msgs {
-			resp := message.Response{Id: msg.Id()}
-
-			err := c.msgSequencer.PushMsg(msg)
-			if err != nil {
-				resp.Err = err
-				msgResChan <- resp
+			if msg.Id() == common.BytesToHash([]byte{}) {
+				msgResChan <- message.Response{
+					Id:  msg.Id(),
+					Err: fmt.Errorf("no msgId provided"),
+				}
 				continue
 			}
 
-			err = c.msgStore.UpdateMsgStatus(msg.Id(), message.MessageStatusQueued)
+			err := c.msgStore.AddMsg(msg)
 			if err != nil {
-				resp.Err = err
-				msgResChan <- resp
-				continue
+				msgResChan <- message.Response{
+					Id:  msg.Id(),
+					Err: fmt.Errorf("no msgId provided"),
+				}
+			}
+
+			// TODO: Schedule
+
+			scheduleChan <- msg
+
+			err = c.msgStore.UpdateMsgStatus(msg.Id(), message.MessageStatusScheduled)
+			if err != nil {
+				msgResChan <- message.Response{
+					Id:  msg.Id(),
+					Err: fmt.Errorf("no msgId provided"),
+				}
 			}
 		}
 
-		close(msgResChan)
+		log.Debug("close scheduler...")
+		close(scheduleChan)
 	}()
 
-	go func() {
-		for {
-			msg, err := c.msgSequencer.PopMsg()
-			if err != nil {
-				msgResChan <- message.Response{Id: msg.Id(), Err: err}
-				continue
-			}
+	go c.sequence(scheduleChan, msgResChan)
 
-			var (
-				returnData []byte
-				tx         *types.Transaction
-			)
-			if msg.SimulationOn {
-				tx, returnData, err = c.callAndSendMsg(ctx, msg)
-			} else {
-				tx, err = c.sendMsg(ctx, msg)
-			}
-			msgResChan <- message.Response{Id: msg.Id(), Tx: tx, ReturnData: returnData, Err: err}
-		}
-	}()
+	go c.broadcast(ctx, msgResChan)
 
 	return msgResChan
+}
+
+func (c *Client) sequence(msgs <-chan message.Request, msgResChan chan<- message.Response) {
+	for msg := range msgs {
+		resp := message.Response{Id: msg.Id()}
+
+		err := c.msgSequencer.PushMsg(msg)
+		if err != nil {
+			resp.Err = err
+			msgResChan <- resp
+			continue
+		}
+	}
+
+	log.Debug("close sequencer...")
+
+	c.msgSequencer.Close()
+}
+
+func (c *Client) broadcast(ctx context.Context, msgResChan chan<- message.Response) {
+	for {
+		msg, err := c.msgSequencer.PopMsg()
+		if err != nil {
+			if errors.Is(err, message.ErrPendingChannelClosed) {
+				log.Debug("close responseChannel...")
+
+				close(msgResChan)
+				break
+			}
+			msgResChan <- message.Response{Id: msg.Id(), Err: err}
+			continue
+		}
+
+		var (
+			returnData []byte
+			tx         *types.Transaction
+		)
+		if msg.SimulationOn {
+			tx, returnData, err = c.callAndSendMsg(ctx, msg)
+		} else {
+			tx, err = c.sendMsg(ctx, msg)
+		}
+		msgResChan <- message.Response{Id: msg.Id(), Tx: tx, ReturnData: returnData, Err: err}
+	}
 }
 
 func (c *Client) CallAndSendMsg(ctx context.Context, msg message.Request) (*types.Transaction, []byte, error) {
@@ -256,6 +301,7 @@ func (c *Client) SendMsg(ctx context.Context, msg message.Request) (signedTx *ty
 }
 
 func (c *Client) sendMsg(ctx context.Context, msg message.Request) (signedTx *types.Transaction, err error) {
+	log.Debug("broadcast msg", "msg", msg)
 	tx, err := c.NewTransaction(ctx, msg)
 	if err != nil {
 		return nil, fmt.Errorf("NewTransaction err: %v", err)

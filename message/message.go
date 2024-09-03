@@ -45,7 +45,7 @@ type MessageStatus uint8
 
 const (
 	MessageStatusSubmitted MessageStatus = iota
-	MessageStatusReadyToQueue
+	MessageStatusScheduled
 	MessageStatusQueued
 	MessageStatusNonceAssigned
 	MessageStatusInflight // Broadcasted but not on chain

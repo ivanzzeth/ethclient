@@ -7,4 +7,5 @@ type Sequencer interface {
 	PeekMsg() (Request, error)
 	QueuedMsgCount() (int, error)
 	PendingMsgCount() (int, error)
+	Close()
 }

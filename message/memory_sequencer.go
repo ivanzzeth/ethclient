@@ -36,9 +36,14 @@ func NewMemorySequencer(msgStorage Storage, buffer int) *MemorySequencer {
 }
 
 func (s *MemorySequencer) PushMsg(msg Request) error {
-	s.msgStorage.AddMsg(msg)
 	s.queuedReq <- msg
 	s.queuedCount.Add(1)
+
+	err := s.msgStorage.UpdateMsgStatus(msg.Id(), MessageStatusQueued)
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -63,6 +68,11 @@ func (s *MemorySequencer) QueuedMsgCount() (int, error) {
 
 func (s *MemorySequencer) PendingMsgCount() (int, error) {
 	return int(s.pendingCount.Load()), nil
+}
+
+func (s *MemorySequencer) Close() {
+	close(s.queuedReq)
+	close(s.pendingReq)
 }
 
 func (s *MemorySequencer) run() {
