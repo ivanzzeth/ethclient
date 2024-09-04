@@ -173,11 +173,11 @@ func (c *Client) NewMethodData(a abi.ABI, methodName string, args ...interface{}
 	return a.Pack(methodName, args...)
 }
 
-func (c *Client) ScheduleMsg(ctx context.Context, req message.Request) {
+func (c *Client) ScheduleMsg(req message.Request) {
 	c.reqChannel <- req
 }
 
-func (c *Client) ReplayMsg(ctx context.Context, msgId common.Hash) (newMsgId common.Hash, err error) {
+func (c *Client) ReplayMsg(msgId common.Hash) (newMsgId common.Hash, err error) {
 	msg, err := c.msgStore.GetMsg(msgId)
 	if err != nil {
 		return

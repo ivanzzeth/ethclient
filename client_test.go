@@ -178,17 +178,14 @@ func Test_Sequencer_Concurrent(t *testing.T) {
 	test_Sequencer_Concurrent(t, client)
 }
 
-func Test_Schedule_StartTime(t *testing.T) {
+func Test_Schedule(t *testing.T) {
 	client := setUpClient(t)
 	defer client.Close()
 
-	test_Schedule_StartTime(t, client)
+	test_Schedule(t, client)
 }
 
 func testScheduleMsg(t *testing.T, client *Client) {
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
-	defer cancel()
-
 	buffer := 10
 	go func() {
 		for i := 0; i < 2*buffer; i++ {
@@ -200,7 +197,7 @@ func testScheduleMsg(t *testing.T, client *Client) {
 
 			message.AssignMessageId(req)
 
-			client.ScheduleMsg(ctx, *req)
+			client.ScheduleMsg(*req)
 			t.Log("Write MSG to channel")
 		}
 
@@ -262,7 +259,7 @@ func test_ScheduleMsg_RandomlyReverted(t *testing.T, client *Client) {
 				},
 			)
 
-			client.ScheduleMsg(ctx, *msg)
+			client.ScheduleMsg(*msg)
 			wantErrMap[msg.Id()] = number%4 == 0
 
 			t.Logf("Write MSG to channel, block: %v, blockMod: %v, msgId: %v", number, number%4, msg.Id().Hex())
@@ -551,7 +548,7 @@ func test_Sequencer_Concurrent(t *testing.T, client *Client) {
 				}
 				msg.SetIdWithNonce(int64(nonce))
 
-				client.ScheduleMsg(ctx, *msg)
+				client.ScheduleMsg(*msg)
 			}
 		}
 
@@ -583,25 +580,22 @@ func test_Sequencer_Concurrent(t *testing.T, client *Client) {
 	assert.True(t, sort.IsSorted(sort.IntSlice(nonceRes)))
 }
 
-func test_Schedule_StartTime(t *testing.T, client *Client) {
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
-	defer cancel()
-
+func test_Schedule(t *testing.T, client *Client) {
 	go func() {
-		client.ScheduleMsg(ctx, *message.AssignMessageId(&message.Request{
+		client.ScheduleMsg(*message.AssignMessageId(&message.Request{
 			From:      addr,
 			To:        &addr,
 			StartTime: time.Now().Add(5 * time.Second).UnixNano(),
 		}))
 
-		client.ScheduleMsg(ctx, *message.AssignMessageId(&message.Request{
+		client.ScheduleMsg(*message.AssignMessageId(&message.Request{
 			From: addr,
 			To:   &addr,
 			// StartTime:      time.Now().Add(5 * time.Second).UnixNano(),
 			ExpirationTime: time.Now().UnixNano() - int64(5*time.Second),
 		}))
 
-		client.ScheduleMsg(ctx, *message.AssignMessageId(&message.Request{
+		client.ScheduleMsg(*message.AssignMessageId(&message.Request{
 			From:           addr,
 			To:             &addr,
 			ExpirationTime: time.Now().Add(10 * time.Second).UnixNano(),
