@@ -36,7 +36,7 @@ type Request struct {
 
 	SimulationOn bool // contains return data of msg call if true
 	// ONLY available on function ScheduleMsg
-	AfterMsg       *common.Hash  // message id. Used for making sure the msg was executed after it.
+	AfterMsg       *common.Hash  // message id or txHash. Used for making sure the msg was executed after it.
 	StartTime      int64         // the msg was executed after the time. It's useful for one-time task.
 	ExpirationTime int64         // the msg will be not included on-chain if timeout.
 	Interval       time.Duration // the msg will be executed every interval.

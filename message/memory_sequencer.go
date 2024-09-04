@@ -1,10 +1,12 @@
 package message
 
 import (
+	"context"
 	"errors"
 	"sync/atomic"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ivanzz/ethclient/ds/graph"
 )
@@ -14,6 +16,7 @@ var _ Sequencer = &MemorySequencer{}
 var ErrPendingChannelClosed = errors.New("pending channel was closed")
 
 type MemorySequencer struct {
+	client       *ethclient.Client
 	msgStorage   Storage
 	dag          *graph.DiGraph
 	queuedReq    chan Request
@@ -22,8 +25,9 @@ type MemorySequencer struct {
 	pendingCount atomic.Int64
 }
 
-func NewMemorySequencer(msgStorage Storage, buffer int) *MemorySequencer {
+func NewMemorySequencer(client *ethclient.Client, msgStorage Storage, buffer int) *MemorySequencer {
 	s := &MemorySequencer{
+		client:     client,
 		msgStorage: msgStorage,
 		dag:        graph.NewDirectedGraph(buffer),
 		queuedReq:  make(chan Request, buffer),
@@ -82,6 +86,13 @@ func (s *MemorySequencer) run() {
 			if req.AfterMsg == nil {
 				s.dag.AddVertex(req.Id())
 			} else {
+				tx, isPending, getTxErr := s.client.TransactionByHash(context.Background(), *req.AfterMsg)
+				if getTxErr == nil && !isPending {
+					log.Debug("tx was found, so push msg to dag", "reqId", req.Id().Hex(),
+						"tx", tx.Hash().Hex(), "is_pending", isPending)
+					s.dag.AddVertex(req.Id())
+				}
+
 				_, err := s.msgStorage.GetMsg(*req.AfterMsg)
 				if err == nil {
 					s.dag.AddEdge(*req.AfterMsg, req.Id())

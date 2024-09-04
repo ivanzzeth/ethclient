@@ -556,12 +556,14 @@ func test_Sequencer_Concurrent(t *testing.T, client *Client) {
 		}
 
 		time.Sleep(5 * time.Second)
-		client.CloseSendMsg()
+		// client.CloseSendMsg()
 	}()
 
-	for resp := range client.BatchSendResponse() {
-		t.Logf("resp: %+v", resp)
-	}
+	// for resp := range client.BatchSendResponse() {
+	// 	t.Logf("resp: %+v", resp)
+	// }
+
+	time.Sleep(5 * time.Second)
 
 	itr, err := contract.FilterExecution(&bind.FilterOpts{
 		Start: blockNumber,

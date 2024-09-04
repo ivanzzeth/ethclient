@@ -59,7 +59,7 @@ func NewClient(c *rpc.Client) (*Client, error) {
 		return nil, err
 	}
 
-	msgSequencer := message.NewMemorySequencer(msgStore, DefaultMsgBuffer)
+	msgSequencer := message.NewMemorySequencer(ethc, msgStore, DefaultMsgBuffer)
 
 	subscriber, err := NewChainSubscriber(ethc)
 	if err != nil {
