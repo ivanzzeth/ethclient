@@ -206,7 +206,7 @@ func testScheduleMsg(t *testing.T, client *Client) {
 		client.CloseSendMsg()
 	}()
 
-	for resp := range client.BatchSendResponse() {
+	for resp := range client.ScheduleMsgResponse() {
 		tx := resp.Tx
 		err := resp.Err
 		var js []byte
@@ -270,7 +270,7 @@ func test_ScheduleMsg_RandomlyReverted(t *testing.T, client *Client) {
 		client.CloseSendMsg()
 	}()
 
-	for resp := range client.BatchSendResponse() {
+	for resp := range client.ScheduleMsgResponse() {
 		tx := resp.Tx
 		err := resp.Err
 
@@ -556,7 +556,7 @@ func test_Sequencer_Concurrent(t *testing.T, client *Client) {
 		// client.CloseSendMsg()
 	}()
 
-	// for resp := range client.BatchSendResponse() {
+	// for resp := range client.ScheduleMsgResponse() {
 	// 	t.Logf("resp: %+v", resp)
 	// }
 
@@ -606,7 +606,7 @@ func test_Schedule(t *testing.T, client *Client) {
 		client.CloseSendMsg()
 	}()
 
-	for resp := range client.BatchSendResponse() {
+	for resp := range client.ScheduleMsgResponse() {
 		t.Log("execution resp: ", resp)
 	}
 }

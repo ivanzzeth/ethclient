@@ -193,7 +193,7 @@ func (c *Client) ReplayMsg(msgId common.Hash) (newMsgId common.Hash, err error) 
 	return
 }
 
-func (c *Client) BatchSendResponse() <-chan message.Response {
+func (c *Client) ScheduleMsgResponse() <-chan message.Response {
 	return c.respChannel
 }
 
