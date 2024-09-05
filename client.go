@@ -219,6 +219,7 @@ func (c *Client) schedule(msgResChan chan<- message.Response) {
 		}
 
 		if !c.msgStore.HasMsg(req.Id()) {
+			// message.MessageStatusSubmitted
 			err := c.msgStore.AddMsg(req)
 			if err != nil {
 				msgResChan <- message.Response{
@@ -348,6 +349,13 @@ func (c *Client) sequence(msgResChan chan<- message.Response) {
 		resp := message.Response{Id: msg.Id()}
 
 		err := c.msgSequencer.PushMsg(msg)
+		if err != nil {
+			resp.Err = err
+			msgResChan <- resp
+			continue
+		}
+
+		err = c.msgStore.UpdateMsgStatus(msg.Id(), message.MessageStatusQueued)
 		if err != nil {
 			resp.Err = err
 			msgResChan <- resp

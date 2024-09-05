@@ -43,11 +43,6 @@ func (s *MemorySequencer) PushMsg(msg Request) error {
 	s.queuedReq <- msg
 	s.queuedCount.Add(1)
 
-	err := s.msgStorage.UpdateMsgStatus(msg.Id(), MessageStatusQueued)
-	if err != nil {
-		return err
-	}
-
 	return nil
 }
 
@@ -86,29 +81,39 @@ func (s *MemorySequencer) run() {
 			if req.AfterMsg == nil {
 				s.dag.AddVertex(req.Id())
 			} else {
-				tx, isPending, getTxErr := s.client.TransactionByHash(context.Background(), *req.AfterMsg)
-				if getTxErr == nil && !isPending {
-					log.Debug("tx was found, so push msg to dag", "reqId", req.Id().Hex(),
-						"tx", tx.Hash().Hex(), "is_pending", isPending)
-					s.dag.AddVertex(req.Id())
+				handled := false
+				if s.client != nil {
+					tx, isPending, getTxErr := s.client.TransactionByHash(context.Background(), *req.AfterMsg)
+					if getTxErr == nil && !isPending {
+						log.Debug("tx was found, so push msg to dag", "reqId", req.Id().Hex(),
+							"tx", tx.Hash().Hex(), "is_pending", isPending)
+						s.dag.AddVertex(req.Id())
+						handled = true
+					}
 				}
 
-				_, err := s.msgStorage.GetMsg(*req.AfterMsg)
-				if err == nil {
-					s.dag.AddEdge(*req.AfterMsg, req.Id())
-				} else {
-					// after message not ready, so push back
-					log.Debug("after message not ready, so push back", "reqId", req.Id().Hex())
-					s.queuedCount.Add(1)
-					s.queuedReq <- req
+				if !handled {
+					_, err := s.msgStorage.GetMsg(*req.AfterMsg)
+					if err == nil {
+						s.dag.AddEdge(*req.AfterMsg, req.Id())
+					} else {
+						// after message not ready, so push back
+						log.Debug("after message not ready, so push back", "reqId", req.Id().Hex())
+						s.queuedCount.Add(1)
+						s.queuedReq <- req
+					}
 				}
 			}
 		}
 	}()
 
 	for reqId := range s.dag.Pipeline() {
-		msg, _ := s.msgStorage.GetMsg(reqId.(common.Hash))
-		s.pendingCount.Add(1)
-		s.pendingReq <- *msg.Req
+		msg, err := s.msgStorage.GetMsg(reqId.(common.Hash))
+		if err == nil {
+			s.pendingCount.Add(1)
+			s.pendingReq <- *msg.Req
+		} else {
+			log.Error("AddMsg first before using sequencer", "err", err)
+		}
 	}
 }

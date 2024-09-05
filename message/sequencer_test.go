@@ -105,13 +105,13 @@ func Test_Sequencer(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		sequencer := NewMemorySequencer(storage, 5)
+		sequencer := NewMemorySequencer(nil, storage, 5)
 
 		pushMsg := func(msg Request) error {
-			// err := storage.AddMsg(msg)
-			// if err != nil {
-			// 	return err
-			// }
+			err := storage.AddMsg(msg)
+			if err != nil {
+				return err
+			}
 			err = sequencer.PushMsg(msg)
 			if err != nil {
 				return err
