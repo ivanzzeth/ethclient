@@ -2,7 +2,6 @@ package ethclient
 
 import (
 	"context"
-	"fmt"
 	"math/big"
 	"time"
 
@@ -38,94 +37,27 @@ func NewChainSubscriber(c *ethclient.Client) (*ChainSubscriber, error) {
 
 func (cs *ChainSubscriber) SubscribeFilterlogs(ctx context.Context, q ethereum.FilterQuery, ch chan<- types.Log) (err error) {
 	log.Debug("SubscribeFilterlogs starts", "query", q)
-	fromBlock := uint64(0)
-	if q.FromBlock != nil {
-		fromBlock = q.FromBlock.Uint64()
-	}
 
-	lastBlock, err := cs.c.BlockNumber(ctx)
-	if err != nil {
-		return err
-	}
-
-	toBlock := uint64(0)
-	if q.ToBlock != nil {
-		toBlock = q.ToBlock.Uint64()
-	} else {
-		toBlock = lastBlock
-	}
-
-	startBlock := fromBlock
-	endBlock := toBlock + 1
-
-	if startBlock >= endBlock {
-		return fmt.Errorf("invalid block number")
-	}
-
-	go func() {
-		for {
-			select {
-			case <-ctx.Done():
-				close(ch)
-				return
-			default:
-				log.Debug("SubscribeFilterlogs loops", "start", startBlock, "end", endBlock)
-				lastBlock, err := cs.c.BlockNumber(ctx)
-				if err != nil {
-					log.Debug("", "curr", lastBlock, "wait", lastBlock, "sleep", cs.retryInterval)
-					time.Sleep(cs.retryInterval)
-					continue
-				}
-
-				if endBlock > lastBlock+1 {
-					// wait for generation
-					log.Debug("waitng for block generation", "curr", lastBlock, "wait", lastBlock, "sleep", cs.retryInterval)
-					time.Sleep(cs.retryInterval)
-					continue
-				}
-
-				q.FromBlock = big.NewInt(0).SetUint64(startBlock)
-				q.ToBlock = big.NewInt(0).SetUint64(endBlock - 1)
-				err = cs.FilterLogsWithChannel(ctx, q, ch, false)
-				if err != nil {
-					log.Debug("SubscribeFilterlogs call FilterLogsWithChannel failed", "err", err)
-					time.Sleep(cs.retryInterval)
-					continue
-				}
-
-				lastBlock, err = cs.c.BlockNumber(ctx)
-				if err != nil {
-					log.Debug("SubscribeFilterlogs call BlockNumber failed", "err", err)
-					time.Sleep(cs.retryInterval)
-					continue
-				}
-
-				startBlock = endBlock
-				endBlock = lastBlock + 1
-
-				time.Sleep(cs.retryInterval)
-			}
-		}
-	}()
-
-	return
+	return cs.FilterLogsWithChannel(ctx, q, ch, true, true)
 }
 
 func (cs *ChainSubscriber) FilterLogs(ctx context.Context, q ethereum.FilterQuery) (logs []types.Log, err error) {
 	logsChan := make(chan types.Log, cs.buffer)
-	err = cs.FilterLogsWithChannel(ctx, q, logsChan, true)
+	err = cs.FilterLogsWithChannel(ctx, q, logsChan, false, true)
 	if err != nil {
 		return nil, err
 	}
 
 	for l := range logsChan {
+		log.Debug("FilterLogs receiving log", "log", l)
+
 		logs = append(logs, l)
 	}
 
 	return
 }
 
-func (cs *ChainSubscriber) FilterLogsWithChannel(ctx context.Context, q ethereum.FilterQuery, logsChan chan<- types.Log, closeOnExit bool) (err error) {
+func (cs *ChainSubscriber) FilterLogsWithChannel(ctx context.Context, q ethereum.FilterQuery, logsChan chan<- types.Log, watch bool, closeOnExit bool) (err error) {
 	if q.BlockHash != nil {
 		logs, err := cs.c.FilterLogs(ctx, q)
 		if err != nil {
@@ -164,7 +96,28 @@ func (cs *ChainSubscriber) FilterLogsWithChannel(ctx context.Context, q ethereum
 	log.Debug("FilterLogsWithChannel starts", "from", fromBlock, "to", toBlock, "startBlock", startBlock, "endBlock", endBlock)
 
 	go func() {
-		for startBlock <= toBlock {
+		for {
+			lastBlock, err := cs.c.BlockNumber(ctx)
+			if err != nil {
+				time.Sleep(cs.retryInterval)
+				continue
+			}
+
+			if startBlock > toBlock {
+				if !watch {
+					break
+				}
+
+				// Update toBlock
+				if lastBlock >= startBlock {
+					toBlock = lastBlock
+				} else {
+					log.Debug("FilterLogsWithChannel waits for new block generated", "lastBlock", lastBlock)
+					time.Sleep(cs.retryInterval)
+					continue
+				}
+			}
+
 			select {
 			case <-ctx.Done():
 				log.Debug("FilterLogsWithChannel exits", "err", ctx.Err(), "from", fromBlock, "to", toBlock, "startBlock", startBlock, "endBlock", endBlock)
@@ -175,11 +128,6 @@ func (cs *ChainSubscriber) FilterLogsWithChannel(ctx context.Context, q ethereum
 					endBlock = toBlock
 				}
 
-				lastBlock, err := cs.c.BlockNumber(ctx)
-				if err != nil {
-					time.Sleep(cs.retryInterval)
-					continue
-				}
 				if endBlock > lastBlock {
 					endBlock = lastBlock
 				}
@@ -200,6 +148,8 @@ func (cs *ChainSubscriber) FilterLogsWithChannel(ctx context.Context, q ethereum
 				}
 
 				for _, l := range lgs {
+					log.Debug("FilterLogsWithChannel sending log", "log", l)
+
 					logsChan <- l
 				}
 
@@ -208,6 +158,7 @@ func (cs *ChainSubscriber) FilterLogsWithChannel(ctx context.Context, q ethereum
 		}
 
 		if closeOnExit {
+			log.Debug("FilterLogsWithChannel was closed...")
 			close(logsChan)
 		}
 	}()

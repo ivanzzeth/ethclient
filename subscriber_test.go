@@ -19,10 +19,7 @@ func TestSubscriber(t *testing.T) {
 	logger := log.NewLogger(handler)
 	log.SetDefault(logger)
 
-	client, err := Dial("http://localhost:8545")
-	if err != nil {
-		t.Fatal(err)
-	}
+	client := setUpClient(t)
 	defer client.Close()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
@@ -119,4 +116,6 @@ func TestSubscriber(t *testing.T) {
 	time.Sleep(5 * time.Second)
 	assert.Equal(t, true, contains)
 	assert.Equal(t, 4, logCount)
+
+	t.Log("Exit")
 }
