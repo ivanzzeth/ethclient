@@ -1,8 +1,12 @@
-package ethclient
+package helper
 
 import (
+	"context"
 	"crypto/ecdsa"
 	"fmt"
+	"math/big"
+	"os"
+	"testing"
 	"time"
 
 	"github.com/ethereum/go-ethereum/accounts"
@@ -24,7 +28,70 @@ import (
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/triedb"
 	"github.com/ethereum/go-ethereum/triedb/pathdb"
+	"github.com/ivanzz/ethclient"
+	"github.com/ivanzz/ethclient/contracts"
+	"github.com/ivanzz/ethclient/message"
 )
+
+var (
+	PrivateKey, _ = crypto.HexToECDSA("ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80")
+	Addr          = crypto.PubkeyToAddress(PrivateKey.PublicKey)
+)
+
+func SetUpClient(t *testing.T) *ethclient.Client {
+	handler := log.NewTerminalHandler(os.Stdout, true)
+	logger := log.NewLogger(handler)
+	log.SetDefault(logger)
+
+	client, err := ethclient.Dial("http://localhost:8545")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = client.RegisterPrivateKey(context.Background(), PrivateKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	client.SetABI(contracts.GetTestContractABI())
+
+	return client
+}
+
+func DeployTestContract(t *testing.T, ctx context.Context, client *ethclient.Client) (common.Address, *types.Transaction, *contracts.Contracts, error) {
+	auth, err := client.MessageToTransactOpts(ctx, message.Request{From: Addr})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	return contracts.DeployContracts(auth, client)
+}
+
+func NewTestClient(t *testing.T) *ethclient.Client {
+	tmpDataDir := t.TempDir()
+	t.Log("testAddr:", Addr)
+	backend, err := NewTestEthBackend(PrivateKey, types.GenesisAlloc{
+		Addr: types.Account{
+			Balance: new(big.Int).Mul(big.NewInt(1000), big.NewInt(0).Exp(big.NewInt(10), big.NewInt(18), nil)),
+		},
+	}, tmpDataDir)
+	if err != nil {
+		t.Fatal("newTestClient err:", err)
+	}
+	// defer backend.Close()
+
+	rpcClient := backend.Attach()
+	if rpcClient == nil {
+		panic("newTestClient attach failed")
+	}
+
+	client, err := ethclient.NewClient(rpcClient)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	return client
+}
 
 func NewTestEthBackend(privateKey *ecdsa.PrivateKey, alloc types.GenesisAlloc, dataDir string) (*node.Node, error) {
 	// Generate test chain.

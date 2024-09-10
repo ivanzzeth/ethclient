@@ -1,4 +1,4 @@
-package ethclient
+package subscriber_test
 
 import (
 	"context"
@@ -11,6 +11,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ivanzz/ethclient/message"
+	"github.com/ivanzz/ethclient/tests/helper"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -19,14 +20,14 @@ func TestSubscriber(t *testing.T) {
 	logger := log.NewLogger(handler)
 	log.SetDefault(logger)
 
-	client := setUpClient(t)
+	client := helper.SetUpClient(t)
 	defer client.Close()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
 	defer cancel()
 
 	// Deploy Test contract.
-	contractAddr, txOfContractCreation, contract, err := deployTestContract(t, ctx, client)
+	contractAddr, txOfContractCreation, contract, err := helper.DeployTestContract(t, ctx, client)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -59,7 +60,7 @@ func TestSubscriber(t *testing.T) {
 
 	// First transact.
 	opts, err := client.MessageToTransactOpts(ctx, message.Request{
-		From: addr,
+		From: helper.Addr,
 	})
 	contractCallTx, err := contract.TestFunc1(opts, arg1, arg2, arg3)
 	if err != nil {
@@ -86,7 +87,7 @@ func TestSubscriber(t *testing.T) {
 
 	// Second transact.
 	opts, err = client.MessageToTransactOpts(ctx, message.Request{
-		From: addr,
+		From: helper.Addr,
 	})
 	contractCallTx, err = contract.TestFunc1(opts, arg1, arg2, arg3)
 	if err != nil {

@@ -1,10 +1,9 @@
-package ethclient
+package client_test
 
 import (
 	"context"
 	"math/big"
 	"math/rand"
-	"os"
 	"sort"
 	"testing"
 	"time"
@@ -12,92 +11,33 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/go-redsync/redsync/v4/redis/goredis/v9"
+	"github.com/ivanzz/ethclient"
 	"github.com/ivanzz/ethclient/contracts"
 	"github.com/ivanzz/ethclient/message"
 	"github.com/ivanzz/ethclient/nonce"
+	"github.com/ivanzz/ethclient/tests/helper"
 	goredislib "github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/assert"
 )
 
-var (
-	privateKey, _ = crypto.HexToECDSA("ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80")
-	addr          = crypto.PubkeyToAddress(privateKey.PublicKey)
-)
-
-func deployTestContract(t *testing.T, ctx context.Context, client *Client) (common.Address, *types.Transaction, *contracts.Contracts, error) {
-	auth, err := client.MessageToTransactOpts(ctx, message.Request{From: addr})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	return contracts.DeployContracts(auth, client)
-}
-
-func newTestClient(t *testing.T) *Client {
-	tmpDataDir := t.TempDir()
-	t.Log("testAddr:", addr)
-	backend, err := NewTestEthBackend(privateKey, types.GenesisAlloc{
-		addr: types.Account{
-			Balance: new(big.Int).Mul(big.NewInt(1000), big.NewInt(0).Exp(big.NewInt(10), big.NewInt(18), nil)),
-		},
-	}, tmpDataDir)
-	if err != nil {
-		t.Fatal("newTestClient err:", err)
-	}
-	// defer backend.Close()
-
-	rpcClient := backend.Attach()
-	if rpcClient == nil {
-		panic("newTestClient attach failed")
-	}
-
-	client, err := NewClient(rpcClient)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	return client
-}
-
-func setUpClient(t *testing.T) *Client {
-	handler := log.NewTerminalHandler(os.Stdout, true)
-	logger := log.NewLogger(handler)
-	log.SetDefault(logger)
-
-	client, err := Dial("http://localhost:8545")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	err = client.RegisterPrivateKey(context.Background(), privateKey)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	client.SetABI(contracts.GetTestContractABI())
-
-	return client
-}
-
 func TestBatchSendMsg(t *testing.T) {
-	client := setUpClient(t)
+	client := helper.SetUpClient(t)
 	defer client.Close()
 
 	testScheduleMsg(t, client)
 }
 
 func Test_BatchSendMsg_RandomlyReverted(t *testing.T) {
-	client := setUpClient(t)
+	client := helper.SetUpClient(t)
 	defer client.Close()
 
 	test_ScheduleMsg_RandomlyReverted(t, client)
 }
 
 func Test_ScheduleMsg_RandomlyReverted_WithRedis(t *testing.T) {
-	client := setUpClient(t)
+	client := helper.SetUpClient(t)
 	defer client.Close()
 
 	// Create a pool with go-redis (or redigo) which is the pool redisync will
@@ -121,35 +61,35 @@ func Test_ScheduleMsg_RandomlyReverted_WithRedis(t *testing.T) {
 }
 
 func TestCallContract(t *testing.T) {
-	client := setUpClient(t)
+	client := helper.SetUpClient(t)
 	defer client.Close()
 
 	testCallContract(t, client)
 }
 
 func TestContractRevert(t *testing.T) {
-	client := setUpClient(t)
+	client := helper.SetUpClient(t)
 	defer client.Close()
 
 	testContractRevert(t, client)
 }
 
 func Test_CallContract_Concurrent(t *testing.T) {
-	client := setUpClient(t)
+	client := helper.SetUpClient(t)
 	defer client.Close()
 
 	test_CallContract_Concurrent(t, client)
 }
 
 func Test_DecodeJsonRpcError(t *testing.T) {
-	client := setUpClient(t)
+	client := helper.SetUpClient(t)
 	defer client.Close()
 
 	client.SetABI(contracts.GetTestContractABI())
 
 	ctx := context.Background()
 	// Deploy Test contract.
-	contractAddr, txOfContractCreation, _, err := deployTestContract(t, ctx, client)
+	contractAddr, txOfContractCreation, _, err := helper.DeployTestContract(t, ctx, client)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -172,26 +112,26 @@ func Test_DecodeJsonRpcError(t *testing.T) {
 }
 
 func Test_Sequencer_Concurrent(t *testing.T) {
-	client := setUpClient(t)
+	client := helper.SetUpClient(t)
 	defer client.Close()
 
 	test_Sequencer_Concurrent(t, client)
 }
 
 func Test_Schedule(t *testing.T) {
-	client := setUpClient(t)
+	client := helper.SetUpClient(t)
 	defer client.Close()
 
 	test_Schedule(t, client)
 }
 
-func testScheduleMsg(t *testing.T, client *Client) {
+func testScheduleMsg(t *testing.T, client *ethclient.Client) {
 	buffer := 10
 	go func() {
 		for i := 0; i < 2*buffer; i++ {
 			to := common.HexToAddress("0x06514D014e997bcd4A9381bF0C4Dc21bD32718D4")
 			req := &message.Request{
-				From: addr,
+				From: helper.Addr,
 				To:   &to,
 			}
 
@@ -220,7 +160,7 @@ func testScheduleMsg(t *testing.T, client *Client) {
 	t.Log("Exit")
 }
 
-func test_ScheduleMsg_RandomlyReverted(t *testing.T, client *Client) {
+func test_ScheduleMsg_RandomlyReverted(t *testing.T, client *ethclient.Client) {
 	buffer := 1000
 
 	client.SetMsgBuffer(buffer)
@@ -229,7 +169,7 @@ func test_ScheduleMsg_RandomlyReverted(t *testing.T, client *Client) {
 	defer cancel()
 
 	// Deploy Test contract.
-	contractAddr, txOfContractCreation, _, err := deployTestContract(t, ctx, client)
+	contractAddr, txOfContractCreation, _, err := helper.DeployTestContract(t, ctx, client)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -252,7 +192,7 @@ func test_ScheduleMsg_RandomlyReverted(t *testing.T, client *Client) {
 			to := contractAddr
 			msg := message.AssignMessageId(
 				&message.Request{
-					From: addr,
+					From: helper.Addr,
 					To:   &to,
 					Data: data,
 					Gas:  1000000,
@@ -306,12 +246,12 @@ func test_ScheduleMsg_RandomlyReverted(t *testing.T, client *Client) {
 	t.Log("Exit")
 }
 
-func testCallContract(t *testing.T, client *Client) {
+func testCallContract(t *testing.T, client *ethclient.Client) {
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
 	defer cancel()
 
 	// Deploy Test contract.
-	contractAddr, txOfContractCreation, contract, err := deployTestContract(t, ctx, client)
+	contractAddr, txOfContractCreation, contract, err := helper.DeployTestContract(t, ctx, client)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -342,7 +282,7 @@ func testCallContract(t *testing.T, client *Client) {
 
 	// contract.TestFunc1(nil)
 	_, err = client.CallMsg(ctx, message.Request{
-		From: crypto.PubkeyToAddress(privateKey.PublicKey),
+		From: helper.Addr,
 		To:   &contractAddr,
 		Data: data,
 	}, nil)
@@ -351,7 +291,7 @@ func testCallContract(t *testing.T, client *Client) {
 	}
 
 	contractCallTx, err := client.SendMsg(ctx, message.Request{
-		From: addr,
+		From: helper.Addr,
 		To:   &contractAddr,
 		Data: data,
 	})
@@ -372,12 +312,12 @@ func testCallContract(t *testing.T, client *Client) {
 	assert.Equal(t, uint64(1), counter.Uint64())
 }
 
-func testContractRevert(t *testing.T, client *Client) {
+func testContractRevert(t *testing.T, client *ethclient.Client) {
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
 	defer cancel()
 
 	// Deploy Test contract.
-	contractAddr, txOfContractCreation, _, err := deployTestContract(t, ctx, client)
+	contractAddr, txOfContractCreation, _, err := helper.DeployTestContract(t, ctx, client)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -394,7 +334,7 @@ func testContractRevert(t *testing.T, client *Client) {
 
 	// Send successful, but executation failed.
 	contractCallTx, err := client.SendMsg(ctx, message.Request{
-		From:     addr,
+		From:     helper.Addr,
 		To:       &contractAddr,
 		Data:     data,
 		Gas:      210000,
@@ -413,7 +353,7 @@ func testContractRevert(t *testing.T, client *Client) {
 
 	// Send failed, because estimateGas faield.
 	contractCallTx, err = client.SendMsg(ctx, message.Request{
-		From: addr,
+		From: helper.Addr,
 		To:   &contractAddr,
 		Data: data,
 	})
@@ -423,7 +363,7 @@ func testContractRevert(t *testing.T, client *Client) {
 
 	// Call failed, because evm execution faield.
 	returnData, err := client.CallMsg(ctx, message.Request{
-		From: addr,
+		From: helper.Addr,
 		To:   &contractAddr,
 		Data: data,
 	}, nil)
@@ -432,12 +372,12 @@ func testContractRevert(t *testing.T, client *Client) {
 	assert.NotEqual(t, nil, err, "expect revert transaction")
 }
 
-func test_CallContract_Concurrent(t *testing.T, client *Client) {
+func test_CallContract_Concurrent(t *testing.T, client *ethclient.Client) {
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
 	defer cancel()
 
 	// Deploy Test contract.
-	contractAddr, txOfContractCreation, contract, err := deployTestContract(t, ctx, client)
+	contractAddr, txOfContractCreation, contract, err := helper.DeployTestContract(t, ctx, client)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -470,7 +410,7 @@ func test_CallContract_Concurrent(t *testing.T, client *Client) {
 			arg2 := big.NewInt(100)
 			arg3 := []byte("world")
 
-			auth, err := bind.NewKeyedTransactorWithChainID(privateKey, chainId)
+			auth, err := bind.NewKeyedTransactorWithChainID(helper.PrivateKey, chainId)
 			if err != nil {
 				t.Error(err)
 				return
@@ -495,12 +435,12 @@ func test_CallContract_Concurrent(t *testing.T, client *Client) {
 	assert.Equal(t, uint64(batch), counter.Uint64())
 }
 
-func test_Sequencer_Concurrent(t *testing.T, client *Client) {
+func test_Sequencer_Concurrent(t *testing.T, client *ethclient.Client) {
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
 	defer cancel()
 
 	// Deploy Test contract.
-	contractAddr, txOfContractCreation, contract, err := deployTestContract(t, ctx, client)
+	contractAddr, txOfContractCreation, contract, err := helper.DeployTestContract(t, ctx, client)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -541,7 +481,7 @@ func test_Sequencer_Concurrent(t *testing.T, client *Client) {
 					afterMsgId = message.GenerateMessageIdByNonce(int64(nonce) - 1)
 				}
 				msg := &message.Request{
-					From:     addr,
+					From:     helper.Addr,
 					To:       &contractAddr,
 					Data:     data,
 					AfterMsg: afterMsgId,
@@ -580,24 +520,24 @@ func test_Sequencer_Concurrent(t *testing.T, client *Client) {
 	assert.True(t, sort.IsSorted(sort.IntSlice(nonceRes)))
 }
 
-func test_Schedule(t *testing.T, client *Client) {
+func test_Schedule(t *testing.T, client *ethclient.Client) {
 	go func() {
 		client.ScheduleMsg(*message.AssignMessageId(&message.Request{
-			From:      addr,
-			To:        &addr,
+			From:      helper.Addr,
+			To:        &helper.Addr,
 			StartTime: time.Now().Add(5 * time.Second).UnixNano(),
 		}))
 
 		client.ScheduleMsg(*message.AssignMessageId(&message.Request{
-			From: addr,
-			To:   &addr,
+			From: helper.Addr,
+			To:   &helper.Addr,
 			// StartTime:      time.Now().Add(5 * time.Second).UnixNano(),
 			ExpirationTime: time.Now().UnixNano() - int64(5*time.Second),
 		}))
 
 		client.ScheduleMsg(*message.AssignMessageId(&message.Request{
-			From:           addr,
-			To:             &addr,
+			From:           helper.Addr,
+			To:             &helper.Addr,
 			ExpirationTime: time.Now().Add(10 * time.Second).UnixNano(),
 			Interval:       2 * time.Second,
 		}))
