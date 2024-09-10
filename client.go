@@ -45,10 +45,10 @@ func Dial(rawurl string) (*Client, error) {
 		return nil, err
 	}
 
-	return NewClient(rpcClient)
+	return NewMemoryClient(rpcClient)
 }
 
-func NewClient(c *rpc.Client) (*Client, error) {
+func NewMemoryClient(c *rpc.Client) (*Client, error) {
 	ethc := ethclient.NewClient(c)
 
 	nm, err := nonce.NewSimpleManager(ethc, nonce.NewMemoryStorage())
@@ -68,6 +68,18 @@ func NewClient(c *rpc.Client) (*Client, error) {
 		return nil, err
 	}
 
+	return NewClient(c, msgStore, nm, subscriber, msgSequencer)
+}
+
+func NewClient(
+	c *rpc.Client,
+	msgStore message.Storage,
+	nonceManager nonce.Manager,
+	subscriber subscriber.Subscriber,
+	sequencer message.Sequencer,
+) (*Client, error) {
+	ethc := ethclient.NewClient(c)
+
 	cli := &Client{
 		Client:          ethc,
 		rpcClient:       c,
@@ -76,8 +88,8 @@ func NewClient(c *rpc.Client) (*Client, error) {
 		respChannel:     make(chan message.Response, consts.DefaultMsgBuffer),
 		msgBuffer:       consts.DefaultMsgBuffer,
 		msgStore:        msgStore,
-		msgSequencer:    msgSequencer,
-		Manager:         nm,
+		msgSequencer:    sequencer,
+		Manager:         nonceManager,
 		Subscriber:      subscriber,
 	}
 

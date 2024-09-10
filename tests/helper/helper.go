@@ -85,7 +85,7 @@ func NewTestClient(t *testing.T) *ethclient.Client {
 		panic("newTestClient attach failed")
 	}
 
-	client, err := ethclient.NewClient(rpcClient)
+	client, err := ethclient.NewMemoryClient(rpcClient)
 	if err != nil {
 		t.Fatal(err)
 	}
