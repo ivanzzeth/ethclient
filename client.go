@@ -63,7 +63,7 @@ func NewClient(c *rpc.Client) (*Client, error) {
 
 	msgSequencer := message.NewMemorySequencer(ethc, msgStore, consts.DefaultMsgBuffer)
 
-	subscriber, err := subscriber.NewChainSubscriber(ethc)
+	subscriber, err := subscriber.NewChainSubscriber(ethc, subscriber.NewMemoryStorage())
 	if err != nil {
 		return nil, err
 	}
@@ -107,6 +107,10 @@ func (c *Client) RawClient() *ethclient.Client {
 
 func (c *Client) SetNonceManager(nm nonce.Manager) {
 	c.Manager = nm
+}
+
+func (c *Client) SetSubscriber(s subscriber.Subscriber) {
+	c.Subscriber = s
 }
 
 func (c *Client) GetSigner() bind.SignerFn {

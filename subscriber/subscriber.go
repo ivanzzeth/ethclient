@@ -14,4 +14,13 @@ type Subscriber interface {
 	FilterLogs(ctx context.Context, q ethereum.FilterQuery) (logs []types.Log, err error)
 }
 
+// Used only for function `SubscribeFilterlogs` and query.ToBlock == nil
+type SubscriberStorage interface {
+	LatestBlockForQuery(ctx context.Context, query ethereum.FilterQuery) (uint64, error)
+	LatestLogForQuery(ctx context.Context, query ethereum.FilterQuery) (types.Log, error)
+
+	SaveLatestBlockForQuery(ctx context.Context, query ethereum.FilterQuery, blockNum uint64) error
+	SaveLatestLogForQuery(ctx context.Context, query ethereum.FilterQuery, log types.Log) error
+}
+
 type resubscribeFunc func() (ethereum.Subscription, error)

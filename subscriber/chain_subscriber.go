@@ -20,15 +20,17 @@ type ChainSubscriber struct {
 	retryInterval time.Duration
 	buffer        int
 	blocksPerScan uint64
+	storage       SubscriberStorage
 }
 
 // NewChainSubscriber .
-func NewChainSubscriber(c *ethclient.Client) (*ChainSubscriber, error) {
+func NewChainSubscriber(c *ethclient.Client, storage SubscriberStorage) (*ChainSubscriber, error) {
 	return &ChainSubscriber{
 		c:             c,
 		buffer:        consts.DefaultMsgBuffer,
 		blocksPerScan: consts.DefaultBlocksPerScan,
 		retryInterval: consts.RetryInterval,
+		storage:       storage,
 	}, nil
 }
 
@@ -88,11 +90,26 @@ func (cs *ChainSubscriber) FilterLogsWithChannel(ctx context.Context, q ethereum
 		}
 	}
 
+	useStorage := q.ToBlock == nil
+
 	startBlock := fromBlock
+
+	if useStorage {
+		fromBlockInStorage, err := cs.storage.LatestBlockForQuery(ctx, q)
+		if err != nil {
+			return err
+		}
+
+		if fromBlockInStorage != 0 {
+			startBlock = fromBlockInStorage + 1
+		}
+	}
+
 	endBlock := startBlock + cs.blocksPerScan
 	log.Debug("FilterLogsWithChannel starts", "from", fromBlock, "to", toBlock, "startBlock", startBlock, "endBlock", endBlock)
 
 	go func() {
+	Scan:
 		for {
 			lastBlock, err := cs.c.BlockNumber(ctx)
 			if err != nil {
@@ -144,10 +161,54 @@ func (cs *ChainSubscriber) FilterLogsWithChannel(ctx context.Context, q ethereum
 					continue
 				}
 
+				var latestHandledLog types.Log
+				if useStorage {
+					latestHandledLog, err = cs.storage.LatestLogForQuery(ctx, q)
+					if err != nil {
+						log.Error("LatestLogForQuery failed", "err", err, "query", q, "block", endBlock)
+						time.Sleep(consts.RetryInterval)
+						continue Scan
+					}
+
+					log.Debug("latestHandledLog", "query", q, "log", latestHandledLog)
+				}
+
 				for _, l := range lgs {
-					log.Debug("FilterLogsWithChannel sending log", "log", l)
+					log.Debug("FilterLogsWithChannel sending log", "log", l, "latest_log", latestHandledLog)
+
+					if latestHandledLog.BlockNumber > l.BlockNumber {
+						continue
+					}
+
+					if latestHandledLog.BlockNumber == l.BlockNumber {
+						if latestHandledLog.TxIndex > l.TxIndex {
+							continue
+						}
+						if latestHandledLog.TxIndex == l.TxIndex && latestHandledLog.Index >= l.Index {
+							continue
+						}
+					}
 
 					logsChan <- l
+					if useStorage {
+						log.Debug("SaveLatestLogForQuery", "query", q, "log", l)
+						err := cs.storage.SaveLatestLogForQuery(ctx, q, l)
+						if err != nil {
+							log.Error("SaveLatestLogForQuery failed", "err", err, "query", q, "block", endBlock)
+							time.Sleep(consts.RetryInterval)
+							continue Scan
+						}
+					}
+				}
+
+				if useStorage {
+					log.Debug("SaveLatestBlockForQuery", "query", q, "block", endBlock)
+					err = cs.storage.SaveLatestBlockForQuery(ctx, q, endBlock)
+					if err != nil {
+						log.Error("SaveLatestBlockForQuery failed", "err", err, "query", q, "block", endBlock)
+						time.Sleep(consts.RetryInterval)
+						continue Scan
+					}
 				}
 
 				startBlock, endBlock = endBlock+1, endBlock+cs.blocksPerScan
