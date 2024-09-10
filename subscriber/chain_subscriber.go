@@ -1,4 +1,4 @@
-package ethclient
+package subscriber
 
 import (
 	"context"
@@ -10,10 +10,6 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ivanzz/ethclient/common/consts"
-)
-
-var (
-	retryInterval = 2 * time.Second
 )
 
 var _ Subscriber = (*ChainSubscriber)(nil)
@@ -32,7 +28,7 @@ func NewChainSubscriber(c *ethclient.Client) (*ChainSubscriber, error) {
 		c:             c,
 		buffer:        consts.DefaultMsgBuffer,
 		blocksPerScan: consts.DefaultBlocksPerScan,
-		retryInterval: retryInterval,
+		retryInterval: consts.RetryInterval,
 	}, nil
 }
 
@@ -203,7 +199,7 @@ func (cs *ChainSubscriber) subscribeNewHead(ctx context.Context, fn resubscribeF
 								return
 							case ethereum.NotFound:
 								log.Warn("Client subscribeNewHead err: header not found")
-								time.Sleep(retryInterval)
+								time.Sleep(consts.RetryInterval)
 								continue
 							case nil:
 								log.Debug("Client get missing header", "number", start)
@@ -211,7 +207,7 @@ func (cs *ChainSubscriber) subscribeNewHead(ctx context.Context, fn resubscribeF
 								resultChan <- header
 							default: // ! nil
 								log.Warn("Client subscribeNewHead", "err", err)
-								time.Sleep(retryInterval)
+								time.Sleep(consts.RetryInterval)
 								continue
 							}
 						}
@@ -234,7 +230,7 @@ func (cs *ChainSubscriber) subscribeNewHead(ctx context.Context, fn resubscribeF
 					return
 				}
 				log.Warn("ChainClient resubscribeHeadFunc", "err", err)
-				time.Sleep(retryInterval)
+				time.Sleep(consts.RetryInterval)
 				continue
 			}
 
@@ -242,7 +238,7 @@ func (cs *ChainSubscriber) subscribeNewHead(ctx context.Context, fn resubscribeF
 			case err := <-sub.Err():
 				log.Warn("ChainClient subscribe head", "err", err)
 				sub.Unsubscribe()
-				time.Sleep(retryInterval)
+				time.Sleep(consts.RetryInterval)
 			}
 		}
 	}()

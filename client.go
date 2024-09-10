@@ -20,6 +20,7 @@ import (
 	"github.com/ivanzz/ethclient/common/consts"
 	"github.com/ivanzz/ethclient/message"
 	"github.com/ivanzz/ethclient/nonce"
+	"github.com/ivanzz/ethclient/subscriber"
 )
 
 type Client struct {
@@ -35,7 +36,7 @@ type Client struct {
 	abi             abi.ABI
 	signers         []bind.SignerFn // Method to use for signing the transaction (mandatory)
 
-	Subscriber
+	subscriber.Subscriber
 }
 
 func Dial(rawurl string) (*Client, error) {
@@ -62,7 +63,7 @@ func NewClient(c *rpc.Client) (*Client, error) {
 
 	msgSequencer := message.NewMemorySequencer(ethc, msgStore, consts.DefaultMsgBuffer)
 
-	subscriber, err := NewChainSubscriber(ethc)
+	subscriber, err := subscriber.NewChainSubscriber(ethc)
 	if err != nil {
 		return nil, err
 	}
