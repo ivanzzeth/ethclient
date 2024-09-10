@@ -625,8 +625,8 @@ func (c *Client) MessageToTransactOpts(ctx context.Context, msg message.Request)
 	return auth, nil
 }
 
-func (c *Client) SubscribeFilterlogs(ctx context.Context, query ethereum.FilterQuery, ch chan<- types.Log) error {
-	return c.Subscriber.SubscribeFilterlogs(ctx, query, ch)
+func (c *Client) SubscribeFilterLogs(ctx context.Context, query ethereum.FilterQuery, ch chan<- types.Log) (ethereum.Subscription, error) {
+	return c.Subscriber.SubscribeFilterLogs(ctx, query, ch)
 }
 
 func (c *Client) FilterLogs(ctx context.Context, q ethereum.FilterQuery) (logs []types.Log, err error) {

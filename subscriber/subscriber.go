@@ -9,7 +9,7 @@ import (
 
 // Subscriber represents a set of methods about chain subscription
 type Subscriber interface {
-	SubscribeFilterlogs(ctx context.Context, query ethereum.FilterQuery, ch chan<- types.Log) error
+	SubscribeFilterLogs(ctx context.Context, query ethereum.FilterQuery, ch chan<- types.Log) (ethereum.Subscription, error)
 	SubscribeNewHead(ctx context.Context, ch chan<- *types.Header) error
 	FilterLogs(ctx context.Context, q ethereum.FilterQuery) (logs []types.Log, err error)
 }

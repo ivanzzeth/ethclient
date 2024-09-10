@@ -14,6 +14,8 @@ import (
 
 var _ Subscriber = (*ChainSubscriber)(nil)
 
+var _ ethereum.LogFilterer = (*ChainSubscriber)(nil)
+
 // ChainSubscriber implements Subscriber interface
 type ChainSubscriber struct {
 	c             *ethclient.Client
@@ -34,10 +36,33 @@ func NewChainSubscriber(c *ethclient.Client, storage SubscriberStorage) (*ChainS
 	}, nil
 }
 
-func (cs *ChainSubscriber) SubscribeFilterlogs(ctx context.Context, q ethereum.FilterQuery, ch chan<- types.Log) (err error) {
+type subscription struct {
+	ctx    context.Context
+	cancel context.CancelFunc
+}
+
+func (s *subscription) Unsubscribe() {
+	s.cancel()
+}
+
+func (s *subscription) Err() <-chan error {
+	errChan := make(chan error)
+	go func() {
+		<-s.ctx.Done()
+		errChan <- s.ctx.Err()
+	}()
+
+	return errChan
+}
+
+func (cs *ChainSubscriber) SubscribeFilterLogs(ctx context.Context, q ethereum.FilterQuery, ch chan<- types.Log) (sub ethereum.Subscription, err error) {
 	log.Debug("SubscribeFilterlogs starts", "query", q)
 
-	return cs.FilterLogsWithChannel(ctx, q, ch, true, true)
+	ctx, cancel := context.WithCancel(ctx)
+	err = cs.FilterLogsWithChannel(ctx, q, ch, true, true)
+
+	sub = &subscription{ctx, cancel}
+	return
 }
 
 func (cs *ChainSubscriber) FilterLogs(ctx context.Context, q ethereum.FilterQuery) (logs []types.Log, err error) {

@@ -45,12 +45,13 @@ func TestSubscriber(t *testing.T) {
 	}
 
 	logs := make(chan types.Log)
-	err = client.Subscriber.SubscribeFilterlogs(ctx, ethereum.FilterQuery{
+	sub, err := client.Subscriber.SubscribeFilterLogs(ctx, ethereum.FilterQuery{
 		FromBlock: big.NewInt(0).SetUint64(fromBlock),
 	}, logs)
 	if err != nil {
 		t.Fatal("Subscribe logs err: ", err)
 	}
+	defer sub.Unsubscribe()
 	logCount := 0
 
 	// Method args
