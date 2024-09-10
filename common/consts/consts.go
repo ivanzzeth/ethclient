@@ -1,4 +1,4 @@
-package ethclient
+package consts
 
 const (
 	DefaultMsgBuffer     = 1000

@@ -17,6 +17,7 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rpc"
+	"github.com/ivanzz/ethclient/common/consts"
 	"github.com/ivanzz/ethclient/message"
 	"github.com/ivanzz/ethclient/nonce"
 )
@@ -59,7 +60,7 @@ func NewClient(c *rpc.Client) (*Client, error) {
 		return nil, err
 	}
 
-	msgSequencer := message.NewMemorySequencer(ethc, msgStore, DefaultMsgBuffer)
+	msgSequencer := message.NewMemorySequencer(ethc, msgStore, consts.DefaultMsgBuffer)
 
 	subscriber, err := NewChainSubscriber(ethc)
 	if err != nil {
@@ -69,10 +70,10 @@ func NewClient(c *rpc.Client) (*Client, error) {
 	cli := &Client{
 		Client:          ethc,
 		rpcClient:       c,
-		reqChannel:      make(chan message.Request, DefaultMsgBuffer),
-		scheduleChannel: make(chan message.Request, DefaultMsgBuffer),
-		respChannel:     make(chan message.Response, DefaultMsgBuffer),
-		msgBuffer:       DefaultMsgBuffer,
+		reqChannel:      make(chan message.Request, consts.DefaultMsgBuffer),
+		scheduleChannel: make(chan message.Request, consts.DefaultMsgBuffer),
+		respChannel:     make(chan message.Response, consts.DefaultMsgBuffer),
+		msgBuffer:       consts.DefaultMsgBuffer,
 		msgStore:        msgStore,
 		msgSequencer:    msgSequencer,
 		Manager:         nm,
@@ -661,7 +662,7 @@ func (c *Client) SetABI(abi abi.ABI) {
 }
 
 func (c *Client) DecodeJsonRpcError(err error) error {
-	jsonErr := &JsonRpcError{abi: c.abi}
+	jsonErr := &consts.JsonRpcError{Abi: c.abi}
 	ec, ok := err.(rpc.Error)
 	if ok {
 		jsonErr.Code = ec.ErrorCode()

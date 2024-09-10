@@ -1,4 +1,4 @@
-package ethclient
+package consts
 
 import (
 	"encoding/hex"
@@ -34,7 +34,7 @@ type JsonRpcError struct {
 	Code    int         `json:"code"`
 	Message string      `json:"message"`
 	Data    interface{} `json:"data,omitempty"`
-	abi     abi.ABI
+	Abi     abi.ABI     `json:"-"`
 }
 
 func (e *JsonRpcError) Error() string {
@@ -45,7 +45,7 @@ func (e *JsonRpcError) Error() string {
 		}
 		hexData, err := hex.DecodeString(data)
 		if err == nil && len(hexData) >= 4 {
-			errorDefinition, err := e.abi.ErrorByID([4]byte(hexData))
+			errorDefinition, err := e.Abi.ErrorByID([4]byte(hexData))
 			// error defined in ABI
 			if err == nil {
 				// name := errorDefinition.Name

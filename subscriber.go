@@ -9,6 +9,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ivanzz/ethclient/common/consts"
 )
 
 var (
@@ -29,8 +30,8 @@ type ChainSubscriber struct {
 func NewChainSubscriber(c *ethclient.Client) (*ChainSubscriber, error) {
 	return &ChainSubscriber{
 		c:             c,
-		buffer:        DefaultMsgBuffer,
-		blocksPerScan: DefaultBlocksPerScan,
+		buffer:        consts.DefaultMsgBuffer,
+		blocksPerScan: consts.DefaultBlocksPerScan,
 		retryInterval: retryInterval,
 	}, nil
 }
