@@ -69,7 +69,7 @@ func (e *JsonRpcError) Error() string {
 					// try to decode using abi.Encoder
 					revertReason, err := abi.UnpackRevert(hexData)
 					if err == nil {
-						errData = fmt.Sprintf(`reverted with %s`, revertReason)
+						errData = fmt.Sprintf(`reverted with [%s]`, revertReason)
 					}
 				}
 			}

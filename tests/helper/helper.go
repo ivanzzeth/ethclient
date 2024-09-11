@@ -53,7 +53,7 @@ func SetUpClient(t *testing.T) *ethclient.Client {
 		t.Fatal(err)
 	}
 
-	client.SetABI(contracts.GetTestContractABI())
+	client.AddABI(contracts.GetTestContractABI())
 
 	return client
 }

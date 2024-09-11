@@ -14,7 +14,7 @@ func Test_DecodeJsonRpcError(t *testing.T) {
 	client := helper.SetUpClient(t)
 	defer client.Close()
 
-	client.SetABI(contracts.GetTestContractABI())
+	client.AddABI(contracts.GetTestContractABI())
 
 	ctx := context.Background()
 	// Deploy Test contract.

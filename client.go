@@ -706,8 +706,31 @@ func (c *Client) DebugTransactionOnChain(ctx context.Context, txHash common.Hash
 }
 
 // Trying to decode some data using the abi if specific
-func (c *Client) SetABI(abi abi.ABI) {
-	c.abi = abi
+func (c *Client) AddABI(intf abi.ABI) {
+	if c.abi.Errors == nil {
+		c.abi.Errors = make(map[string]abi.Error)
+	}
+
+	if c.abi.Methods == nil {
+		c.abi.Methods = make(map[string]abi.Method)
+	}
+
+	if c.abi.Events == nil {
+		c.abi.Events = make(map[string]abi.Event)
+	}
+
+	// errors
+	for k, v := range intf.Errors {
+		c.abi.Errors[k] = v
+	}
+
+	for k, v := range intf.Methods {
+		c.abi.Methods[k] = v
+	}
+
+	for k, v := range intf.Events {
+		c.abi.Events[k] = v
+	}
 }
 
 func (c *Client) DecodeJsonRpcError(err error) error {
