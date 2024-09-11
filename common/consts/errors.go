@@ -31,47 +31,53 @@ func (e RevertError) Error() string {
 }
 
 type JsonRpcError struct {
-	Code    int         `json:"code"`
-	Message string      `json:"message"`
-	Data    interface{} `json:"data,omitempty"`
-	Abi     abi.ABI     `json:"-"`
+	Code     int         `json:"code"`
+	Message  string      `json:"message"`
+	Data     interface{} `json:"data,omitempty"`
+	RawError string      `json:"raw_error"`
+	Abi      abi.ABI     `json:"-"`
 }
 
 func (e *JsonRpcError) Error() string {
 	errData := e.Data
-	if data, ok := e.Data.(string); ok {
-		if strings.HasPrefix(data, "0x") {
-			data = data[2:]
-		}
-		hexData, err := hex.DecodeString(data)
-		if err == nil && len(hexData) >= 4 {
-			errorDefinition, err := e.Abi.ErrorByID([4]byte(hexData))
-			// error defined in ABI
-			if err == nil {
-				// name := errorDefinition.Name
-				errSignature := errorDefinition.String()
-				if strings.HasPrefix(errSignature, "error ") {
-					errSignature = errSignature[6:]
-				}
-				params, _ := errorDefinition.Inputs.Unpack(hexData[4:])
-				id := errorDefinition.ID.Hex()
-
-				errData = RevertError{
-					Id:            id,
-					FuncSignature: errSignature,
-					Params:        params,
-				}
-			} else {
-				// try to decode using abi.Encoder
-				revertReason, err := abi.UnpackRevert(hexData)
+	if errData == nil {
+		errData = e.RawError
+	} else {
+		if data, ok := e.Data.(string); ok {
+			if strings.HasPrefix(data, "0x") {
+				data = data[2:]
+			}
+			hexData, err := hex.DecodeString(data)
+			if err == nil && len(hexData) >= 4 {
+				errorDefinition, err := e.Abi.ErrorByID([4]byte(hexData))
+				// error defined in ABI
 				if err == nil {
-					errData = fmt.Sprintf(`reverted with %s`, revertReason)
+					// name := errorDefinition.Name
+					errSignature := errorDefinition.String()
+					if strings.HasPrefix(errSignature, "error ") {
+						errSignature = errSignature[6:]
+					}
+					params, _ := errorDefinition.Inputs.Unpack(hexData[4:])
+					id := errorDefinition.ID.Hex()
+
+					errData = RevertError{
+						Id:            id,
+						FuncSignature: errSignature,
+						Params:        params,
+					}
+				} else {
+					// try to decode using abi.Encoder
+					revertReason, err := abi.UnpackRevert(hexData)
+					if err == nil {
+						errData = fmt.Sprintf(`reverted with %s`, revertReason)
+					}
 				}
 			}
 		}
 	}
 
-	return fmt.Sprintf("json-rpc error(code=%d, msg=\"%s\", data=\"%v\", data_type=%T)", e.Code, e.Message, errData, errData)
+	return fmt.Sprintf("json-rpc error(code=%d, msg=\"%s\", data=\"%v\", data_type=%T)",
+		e.Code, e.Message, errData, errData)
 }
 
 func (err *JsonRpcError) ErrorCode() int {

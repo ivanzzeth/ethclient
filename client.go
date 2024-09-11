@@ -673,13 +673,45 @@ func (c *Client) PendingCallContract(ctx context.Context, msg ethereum.CallMsg) 
 	return ret, nil
 }
 
+func (c *Client) DebugTransactionOnChain(ctx context.Context, txHash common.Hash) ([]byte, error) {
+	receipt, confirmed := c.WaitTxReceipt(txHash, 3, 30*time.Second)
+	if !confirmed {
+		return nil, fmt.Errorf("tx receipt not found")
+	}
+
+	tx, _, err := c.TransactionByHash(ctx, txHash)
+	if err != nil {
+		return nil, err
+	}
+
+	from, err := c.TransactionSender(ctx, tx, receipt.BlockHash, receipt.TransactionIndex)
+	if err != nil {
+		return nil, err
+	}
+
+	msg := ethereum.CallMsg{
+		From:          from,
+		To:            tx.To(),
+		Value:         tx.Value(),
+		Data:          tx.Data(),
+		Gas:           tx.Gas(),
+		GasPrice:      tx.GasPrice(),
+		AccessList:    tx.AccessList(),
+		BlobGasFeeCap: tx.BlobGasFeeCap(),
+		BlobHashes:    tx.BlobHashes(),
+	}
+	ret, err := c.CallContractAtHash(ctx, msg, receipt.BlockHash)
+
+	return ret, err
+}
+
 // Trying to decode some data using the abi if specific
 func (c *Client) SetABI(abi abi.ABI) {
 	c.abi = abi
 }
 
 func (c *Client) DecodeJsonRpcError(err error) error {
-	jsonErr := &consts.JsonRpcError{Abi: c.abi}
+	jsonErr := &consts.JsonRpcError{Abi: c.abi, RawError: err.Error()}
 	ec, ok := err.(rpc.Error)
 	if ok {
 		jsonErr.Code = ec.ErrorCode()
