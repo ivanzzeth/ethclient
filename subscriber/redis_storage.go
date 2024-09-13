@@ -39,6 +39,10 @@ func (s *RedisStorage) LatestBlockForQuery(ctx context.Context, query ethereum.F
 		return 0, err
 	}
 
+	locker := s.QueryLock(query)
+	locker.Lock()
+	defer locker.Unlock()
+
 	key := fmt.Sprintf("latest_block_of_query_%v", GetQueryKey(query))
 	blockStr, err := conn.Get(key)
 	if err != nil {
@@ -61,6 +65,10 @@ func (s *RedisStorage) LatestLogForQuery(ctx context.Context, query ethereum.Fil
 	if err != nil {
 		return l, err
 	}
+
+	locker := s.QueryLock(query)
+	locker.Lock()
+	defer locker.Unlock()
 
 	key := fmt.Sprintf("latest_log_of_query_%v", GetQueryKey(query))
 	logStr, err := conn.Get(key)
@@ -86,6 +94,10 @@ func (s *RedisStorage) SaveLatestBlockForQuery(ctx context.Context, query ethere
 		return err
 	}
 
+	locker := s.QueryLock(query)
+	locker.Lock()
+	defer locker.Unlock()
+
 	key := fmt.Sprintf("latest_block_of_query_%v", GetQueryKey(query))
 	blockNumStr := strconv.Itoa(int(blockNum))
 	_, err = conn.Set(key, blockNumStr)
@@ -101,6 +113,10 @@ func (s *RedisStorage) SaveLatestLogForQuery(ctx context.Context, query ethereum
 	if err != nil {
 		return err
 	}
+
+	locker := s.QueryLock(query)
+	locker.Lock()
+	defer locker.Unlock()
 
 	key := fmt.Sprintf("latest_log_of_query_%v", GetQueryKey(query))
 	logBytes, err := log.MarshalJSON()
