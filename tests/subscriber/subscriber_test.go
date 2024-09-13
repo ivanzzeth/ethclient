@@ -10,12 +10,16 @@ import (
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/go-redsync/redsync/v4/redis/goredis/v9"
+	"github.com/ivanzz/ethclient"
 	"github.com/ivanzz/ethclient/message"
+	"github.com/ivanzz/ethclient/subscriber"
 	"github.com/ivanzz/ethclient/tests/helper"
+	goredislib "github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/assert"
 )
 
-func TestSubscriber(t *testing.T) {
+func Test_Subscriber(t *testing.T) {
 	handler := log.NewTerminalHandler(os.Stdout, true)
 	logger := log.NewLogger(handler)
 	log.SetDefault(logger)
@@ -23,6 +27,36 @@ func TestSubscriber(t *testing.T) {
 	client := helper.SetUpClient(t)
 	defer client.Close()
 
+	testSubscriber(t, client)
+}
+
+func Test_Subscriber_UsingRedisStorage(t *testing.T) {
+	handler := log.NewTerminalHandler(os.Stdout, true)
+	logger := log.NewLogger(handler)
+	log.SetDefault(logger)
+
+	client := helper.SetUpClient(t)
+	defer client.Close()
+
+	redisClient := goredislib.NewClient(&goredislib.Options{
+		Addr:     "localhost:16379",
+		Password: "135683271d06e8",
+	})
+
+	pool := goredis.NewPool(redisClient)
+
+	storage := subscriber.NewRedisStorage(pool)
+	subscriber, err := subscriber.NewChainSubscriber(client.Client, storage)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	client.SetSubscriber(subscriber)
+
+	testSubscriber(t, client)
+}
+
+func testSubscriber(t *testing.T, client *ethclient.Client) {
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
 	defer cancel()
 

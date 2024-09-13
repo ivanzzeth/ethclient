@@ -10,6 +10,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/go-redsync/redsync/v4"
 	"github.com/go-redsync/redsync/v4/redis"
+	"github.com/ivanzz/ethclient/ds/locker"
 )
 
 var _ Storage = &RedisStorage{}
@@ -26,21 +27,11 @@ func NewRedisStorage(pool redis.Pool) *RedisStorage {
 	}
 }
 
-type redSyncMutexWrapper redsync.Mutex
-
-func (l *redSyncMutexWrapper) Lock() {
-	(*redsync.Mutex)(l).Lock()
-}
-
-func (l *redSyncMutexWrapper) Unlock() {
-	(*redsync.Mutex)(l).Unlock()
-}
-
 func (s *RedisStorage) NonceLockFrom(from common.Address) sync.Locker {
 	mutexKey := fmt.Sprintf("nonce-lock-%s", strings.ToLower(from.Hex()))
 	mutex := s.rsync.NewMutex(mutexKey)
 
-	m := redSyncMutexWrapper(*mutex)
+	m := locker.RedSyncMutexWrapper(*mutex)
 	return &m
 }
 
