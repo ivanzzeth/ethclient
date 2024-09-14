@@ -12,9 +12,9 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/go-redsync/redsync/v4/redis/goredis/v9"
-	"github.com/ivanzz/ethclient"
-	"github.com/ivanzz/ethclient/examples/subscribe_polymarket/contracts/ctf_exchange"
-	"github.com/ivanzz/ethclient/subscriber"
+	"github.com/ivanzzeth/ethclient"
+	"github.com/ivanzzeth/ethclient/examples/subscribe_polymarket/contracts/ctf_exchange"
+	"github.com/ivanzzeth/ethclient/subscriber"
 	goredislib "github.com/redis/go-redis/v9"
 )
 

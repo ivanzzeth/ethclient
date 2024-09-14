@@ -8,7 +8,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/ivanzz/ethclient/ds/graph"
+	"github.com/ivanzzeth/ethclient/ds/graph"
 )
 
 var _ Sequencer = &MemorySequencer{}

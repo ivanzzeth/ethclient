@@ -10,7 +10,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/go-redsync/redsync/v4"
 	"github.com/go-redsync/redsync/v4/redis"
-	"github.com/ivanzz/ethclient/ds/locker"
+	"github.com/ivanzzeth/ethclient/ds/locker"
 )
 
 type RedisStorage struct {

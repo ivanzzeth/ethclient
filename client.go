@@ -17,10 +17,10 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rpc"
-	"github.com/ivanzz/ethclient/common/consts"
-	"github.com/ivanzz/ethclient/message"
-	"github.com/ivanzz/ethclient/nonce"
-	"github.com/ivanzz/ethclient/subscriber"
+	"github.com/ivanzzeth/ethclient/common/consts"
+	"github.com/ivanzzeth/ethclient/message"
+	"github.com/ivanzzeth/ethclient/nonce"
+	"github.com/ivanzzeth/ethclient/subscriber"
 )
 
 type Client struct {

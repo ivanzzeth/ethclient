@@ -3,7 +3,7 @@ package client_test
 import (
 	"testing"
 
-	"github.com/ivanzz/ethclient/tests/helper"
+	"github.com/ivanzzeth/ethclient/tests/helper"
 )
 
 func TestBatchSendMsg(t *testing.T) {

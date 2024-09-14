@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ivanzz/ethclient/contracts"
-	"github.com/ivanzz/ethclient/tests/helper"
+	"github.com/ivanzzeth/ethclient/contracts"
+	"github.com/ivanzzeth/ethclient/tests/helper"
 	"github.com/stretchr/testify/assert"
 )
 

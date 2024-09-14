@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ivanzz/ethclient"
+	"github.com/ivanzzeth/ethclient"
 )
 
 func main() {

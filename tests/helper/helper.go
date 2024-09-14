@@ -28,9 +28,9 @@ import (
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/triedb"
 	"github.com/ethereum/go-ethereum/triedb/pathdb"
-	"github.com/ivanzz/ethclient"
-	"github.com/ivanzz/ethclient/contracts"
-	"github.com/ivanzz/ethclient/message"
+	"github.com/ivanzzeth/ethclient"
+	"github.com/ivanzzeth/ethclient/contracts"
+	"github.com/ivanzzeth/ethclient/message"
 )
 
 var (

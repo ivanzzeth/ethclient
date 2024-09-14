@@ -1,4 +1,4 @@
-module github.com/ivanzz/ethclient
+module github.com/ivanzzeth/ethclient
 
 go 1.22
 

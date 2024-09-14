@@ -16,7 +16,7 @@ import (
 	"math/big"
 	"time"
 
-	"github.com/ivanzz/ethclient"
+	"github.com/ivanzzeth/ethclient"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 )

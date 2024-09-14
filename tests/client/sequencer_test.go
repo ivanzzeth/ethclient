@@ -10,10 +10,10 @@ import (
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ivanzz/ethclient"
-	"github.com/ivanzz/ethclient/contracts"
-	"github.com/ivanzz/ethclient/message"
-	"github.com/ivanzz/ethclient/tests/helper"
+	"github.com/ivanzzeth/ethclient"
+	"github.com/ivanzzeth/ethclient/contracts"
+	"github.com/ivanzzeth/ethclient/message"
+	"github.com/ivanzzeth/ethclient/tests/helper"
 	"github.com/stretchr/testify/assert"
 )
 
