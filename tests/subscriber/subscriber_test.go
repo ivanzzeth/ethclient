@@ -27,7 +27,7 @@ func Test_Subscriber(t *testing.T) {
 	client := helper.SetUpClient(t)
 	defer client.Close()
 
-	testSubscriber(t, client)
+	testSubscriber(t, client, 3)
 }
 
 func Test_Subscriber_UsingRedisStorage(t *testing.T) {
@@ -53,10 +53,12 @@ func Test_Subscriber_UsingRedisStorage(t *testing.T) {
 
 	client.SetSubscriber(subscriber)
 
-	testSubscriber(t, client)
+	testSubscriber(t, client, 0)
 }
 
-func testSubscriber(t *testing.T, client *ethclient.Client) {
+func testSubscriber(t *testing.T, client *ethclient.Client, confirmations uint64) {
+	client.SetBlockConfirmationsOnSubscription(confirmations)
+
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
 	defer cancel()
 

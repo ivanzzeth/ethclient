@@ -2,12 +2,10 @@ package subscriber
 
 import (
 	"context"
-	"encoding/json"
 	"sync"
 
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/crypto"
 )
 
 type MemoryStorage struct {
@@ -41,11 +39,4 @@ func (s *MemoryStorage) SaveLatestBlockForQuery(ctx context.Context, query ether
 func (s *MemoryStorage) SaveLatestLogForQuery(ctx context.Context, query ethereum.FilterQuery, log types.Log) error {
 	s.logMap.Store(GetQueryKey(query), log)
 	return nil
-}
-
-func GetQueryKey(query ethereum.FilterQuery) string {
-	json, _ := json.Marshal(query)
-	hash := crypto.Keccak256Hash(json)
-
-	return hash.Hex()
 }
