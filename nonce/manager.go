@@ -4,8 +4,14 @@ import (
 	"context"
 	"math/big"
 
+	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
 )
+
+type ethBackend interface {
+	ethereum.PendingStateReader
+	ethereum.GasPricer
+}
 
 type Manager interface {
 	PendingNonceAt(ctx context.Context, account common.Address) (uint64, error)
