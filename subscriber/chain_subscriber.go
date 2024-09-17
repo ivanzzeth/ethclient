@@ -19,6 +19,7 @@ var _ ethereum.LogFilterer = (*ChainSubscriber)(nil)
 // ChainSubscriber implements Subscriber interface
 type ChainSubscriber struct {
 	c                                *ethclient.Client
+	chainId                          *big.Int
 	retryInterval                    time.Duration
 	buffer                           int
 	blocksPerScan                    uint64
@@ -28,8 +29,14 @@ type ChainSubscriber struct {
 
 // NewChainSubscriber .
 func NewChainSubscriber(c *ethclient.Client, storage SubscriberStorage) (*ChainSubscriber, error) {
+	chainId, err := c.ChainID(context.Background())
+	if err != nil {
+		return nil, err
+	}
+
 	return &ChainSubscriber{
 		c:             c,
+		chainId:       chainId,
 		buffer:        consts.DefaultMsgBuffer,
 		blocksPerScan: consts.DefaultBlocksPerScan,
 		retryInterval: consts.RetryInterval,
@@ -141,7 +148,7 @@ func (cs *ChainSubscriber) FilterLogsWithChannel(ctx context.Context, q ethereum
 
 	endBlock := startBlock + cs.blocksPerScan
 
-	queryKey := GetQueryKey(q)
+	queryKey := GetQueryKey(cs.chainId, q)
 	log.Debug("FilterLogsWithChannel starts", "queryHash", queryKey, "from", fromBlock, "to", toBlock, "startBlock", startBlock, "endBlock", endBlock)
 
 	go func() {

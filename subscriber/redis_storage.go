@@ -3,6 +3,7 @@ package subscriber
 import (
 	"context"
 	"fmt"
+	"math/big"
 	"strconv"
 	"sync"
 
@@ -14,19 +15,21 @@ import (
 )
 
 type RedisStorage struct {
+	chainId   *big.Int
 	redisPool redis.Pool
 	rsync     *redsync.Redsync
 }
 
-func NewRedisStorage(pool redis.Pool) *RedisStorage {
+func NewRedisStorage(chainId *big.Int, pool redis.Pool) *RedisStorage {
 	return &RedisStorage{
+		chainId:   chainId,
 		redisPool: pool,
 		rsync:     redsync.New(pool),
 	}
 }
 
 func (s *RedisStorage) QueryLock(q ethereum.FilterQuery) sync.Locker {
-	key := fmt.Sprintf("query_%v", GetQueryKey(q))
+	key := fmt.Sprintf("query_%v", GetQueryKey(s.chainId, q))
 
 	mutext := s.rsync.NewMutex(key)
 	m := locker.RedSyncMutexWrapper(*mutext)
@@ -43,7 +46,7 @@ func (s *RedisStorage) LatestBlockForQuery(ctx context.Context, query ethereum.F
 	locker.Lock()
 	defer locker.Unlock()
 
-	key := fmt.Sprintf("latest_block_of_query_%v", GetQueryKey(query))
+	key := fmt.Sprintf("latest_block_of_query_%v", GetQueryKey(s.chainId, query))
 	blockStr, err := conn.Get(key)
 	if err != nil {
 		return 0, err
@@ -70,7 +73,7 @@ func (s *RedisStorage) LatestLogForQuery(ctx context.Context, query ethereum.Fil
 	locker.Lock()
 	defer locker.Unlock()
 
-	key := fmt.Sprintf("latest_log_of_query_%v", GetQueryKey(query))
+	key := fmt.Sprintf("latest_log_of_query_%v", GetQueryKey(s.chainId, query))
 	logStr, err := conn.Get(key)
 	if err != nil {
 		return l, err
@@ -98,7 +101,7 @@ func (s *RedisStorage) SaveLatestBlockForQuery(ctx context.Context, query ethere
 	locker.Lock()
 	defer locker.Unlock()
 
-	key := fmt.Sprintf("latest_block_of_query_%v", GetQueryKey(query))
+	key := fmt.Sprintf("latest_block_of_query_%v", GetQueryKey(s.chainId, query))
 	blockNumStr := strconv.Itoa(int(blockNum))
 	_, err = conn.Set(key, blockNumStr)
 	if err != nil {
@@ -118,7 +121,7 @@ func (s *RedisStorage) SaveLatestLogForQuery(ctx context.Context, query ethereum
 	locker.Lock()
 	defer locker.Unlock()
 
-	key := fmt.Sprintf("latest_log_of_query_%v", GetQueryKey(query))
+	key := fmt.Sprintf("latest_log_of_query_%v", GetQueryKey(s.chainId, query))
 	logBytes, err := log.MarshalJSON()
 	if err != nil {
 		return err

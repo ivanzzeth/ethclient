@@ -38,6 +38,11 @@ func Test_Subscriber_UsingRedisStorage(t *testing.T) {
 	client := helper.SetUpClient(t)
 	defer client.Close()
 
+	chainId, err := client.ChainID(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	redisClient := goredislib.NewClient(&goredislib.Options{
 		Addr:     "localhost:16379",
 		Password: "135683271d06e8",
@@ -45,7 +50,7 @@ func Test_Subscriber_UsingRedisStorage(t *testing.T) {
 
 	pool := goredis.NewPool(redisClient)
 
-	storage := subscriber.NewRedisStorage(pool)
+	storage := subscriber.NewRedisStorage(chainId, pool)
 	subscriber, err := subscriber.NewChainSubscriber(client.Client, storage)
 	if err != nil {
 		t.Fatal(err)

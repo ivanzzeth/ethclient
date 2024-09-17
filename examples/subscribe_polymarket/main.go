@@ -31,6 +31,11 @@ func main() {
 
 	defer client.Close()
 
+	chainId, err := client.ChainID(context.Background())
+	if err != nil {
+		panic(err)
+	}
+
 	redisClient := goredislib.NewClient(&goredislib.Options{
 		Addr:     "localhost:16379",
 		Password: "135683271d06e8",
@@ -38,7 +43,7 @@ func main() {
 
 	pool := goredis.NewPool(redisClient)
 
-	subStorage := subscriber.NewRedisStorage(pool)
+	subStorage := subscriber.NewRedisStorage(chainId, pool)
 	subscriber, err := subscriber.NewChainSubscriber(client.Client, subStorage)
 	if err != nil {
 		panic(err)

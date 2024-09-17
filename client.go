@@ -64,6 +64,11 @@ type Client struct {
 func NewMemoryClient(c *rpc.Client) (*Client, error) {
 	ethc := ethclient.NewClient(c)
 
+	chainId, err := ethc.ChainID(context.Background())
+	if err != nil {
+		return nil, err
+	}
+
 	nm, err := nonce.NewSimpleManager(ethc, nonce.NewMemoryStorage())
 	if err != nil {
 		return nil, err
@@ -76,7 +81,7 @@ func NewMemoryClient(c *rpc.Client) (*Client, error) {
 
 	msgSequencer := message.NewMemorySequencer(ethc, msgStore, consts.DefaultMsgBuffer)
 
-	subscriber, err := subscriber.NewChainSubscriber(ethc, subscriber.NewMemoryStorage())
+	subscriber, err := subscriber.NewChainSubscriber(ethc, subscriber.NewMemoryStorage(chainId))
 	if err != nil {
 		return nil, err
 	}
