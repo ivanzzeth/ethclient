@@ -266,13 +266,17 @@ func (cs *ChainSubscriber) FilterLogsWithChannel(ctx context.Context, q ethereum
 }
 
 // SubscribeNewHead .
-func (cs *ChainSubscriber) SubscribeNewHead(ctx context.Context, ch chan<- *types.Header) error {
+func (cs *ChainSubscriber) SubscribeNewHead(ctx context.Context, ch chan<- *types.Header) (sub ethereum.Subscription, err error) {
 	checkChan := make(chan *types.Header)
 	resubscribeFunc := func() (ethereum.Subscription, error) {
 		return cs.c.SubscribeNewHead(ctx, checkChan)
 	}
 
-	return cs.subscribeNewHead(ctx, resubscribeFunc, checkChan, ch)
+	ctx, cancel := context.WithCancel(ctx)
+
+	sub = &subscription{ctx, cancel}
+
+	return sub, cs.subscribeNewHead(ctx, resubscribeFunc, checkChan, ch)
 }
 
 // subscribeNewHead subscribes new header and auto reconnect if the connection lost.

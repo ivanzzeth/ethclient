@@ -23,6 +23,28 @@ import (
 	"github.com/ivanzzeth/ethclient/subscriber"
 )
 
+var _ bind.ContractBackend = (*Client)(nil)
+var _ bind.PendingContractCaller = (*Client)(nil)
+var _ ethereum.ChainIDReader = (*Client)(nil)
+
+var _ ethereum.ChainReader = (*Client)(nil)
+var _ ethereum.TransactionReader = (*Client)(nil)
+var _ ethereum.ChainStateReader = (*Client)(nil)
+var _ ethereum.ContractCaller = (*Client)(nil)
+var _ ethereum.LogFilterer = (*Client)(nil)
+var _ ethereum.TransactionSender = (*Client)(nil)
+var _ ethereum.GasPricer = (*Client)(nil)
+var _ ethereum.GasPricer1559 = (*Client)(nil)
+var _ ethereum.FeeHistoryReader = (*Client)(nil)
+var _ ethereum.PendingStateReader = (*Client)(nil)
+var _ ethereum.PendingContractCaller = (*Client)(nil)
+var _ ethereum.GasEstimator = (*Client)(nil)
+
+// TODO:
+// var _ ethereum.PendingStateEventer = (*Client)(nil)
+var _ ethereum.BlockNumberReader = (*Client)(nil)
+var _ ethereum.ChainIDReader = (*Client)(nil)
+
 type Client struct {
 	*ethclient.Client
 	rpcClient *rpc.Client
@@ -633,7 +655,7 @@ func (c *Client) FilterLogs(ctx context.Context, q ethereum.FilterQuery) (logs [
 	return c.Subscriber.FilterLogs(ctx, q)
 }
 
-func (c *Client) SubscribeNewHead(ctx context.Context, ch chan<- *types.Header) error {
+func (c *Client) SubscribeNewHead(ctx context.Context, ch chan<- *types.Header) (ethereum.Subscription, error) {
 	return c.Subscriber.SubscribeNewHead(ctx, ch)
 }
 
