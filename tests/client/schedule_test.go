@@ -39,7 +39,7 @@ func Test_ScheduleMsg_RandomlyReverted_WithRedis(t *testing.T) {
 	pool := goredis.NewPool(redisClient)
 
 	storage := nonce.NewRedisStorage(pool)
-	nm, err := nonce.NewSimpleManager(client.Client, storage)
+	nm, err := nonce.NewSimpleManager(client.Client, client.Client, storage)
 	if err != nil {
 		t.Fatal(err)
 	}

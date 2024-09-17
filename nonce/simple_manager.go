@@ -5,35 +5,38 @@ import (
 	"math/big"
 	"sync"
 
+	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/ethclient"
 )
 
 var _ Manager = &SimpleManager{}
 
 type SimpleManager struct {
 	Storage
-	client *ethclient.Client
+	pendingStateReader ethereum.PendingStateReader
+	gasPricer          ethereum.GasPricer
 }
 
 var snm *SimpleManager
 var snmOnce sync.Once
 
-func GetSimpleManager(client *ethclient.Client, storage Storage) (*SimpleManager, error) {
+func GetSimpleManager(pendingStateReader ethereum.PendingStateReader, gasPricer ethereum.GasPricer, storage Storage) (*SimpleManager, error) {
 	snmOnce.Do(func() {
 		snm = &SimpleManager{
-			Storage: storage,
-			client:  client,
+			Storage:            storage,
+			pendingStateReader: pendingStateReader,
+			gasPricer:          gasPricer,
 		}
 	})
 
 	return snm, nil
 }
 
-func NewSimpleManager(client *ethclient.Client, storage Storage) (*SimpleManager, error) {
+func NewSimpleManager(pendingStateReader ethereum.PendingStateReader, gasPricer ethereum.GasPricer, storage Storage) (*SimpleManager, error) {
 	return &SimpleManager{
-		Storage: storage,
-		client:  client,
+		Storage:            storage,
+		pendingStateReader: pendingStateReader,
+		gasPricer:          gasPricer,
 	}, nil
 }
 
@@ -52,13 +55,13 @@ func (nm *SimpleManager) PendingNonceAt(ctx context.Context, account common.Addr
 		return 0, err
 	}
 
-	nonceInLatest, err := nm.client.PendingNonceAt(ctx, account)
+	nonceInLatest, err := nm.pendingStateReader.PendingNonceAt(ctx, account)
 	if err != nil {
 		return 0, err
 	}
 
 	if nonce == 0 || nonceInLatest > nonce {
-		nonce, err = nm.client.PendingNonceAt(ctx, account)
+		nonce, err = nm.pendingStateReader.PendingNonceAt(ctx, account)
 		if err != nil {
 			return 0, err
 		}
@@ -73,7 +76,7 @@ func (nm *SimpleManager) PendingNonceAt(ctx context.Context, account common.Addr
 }
 
 func (nm *SimpleManager) SuggestGasPrice(ctx context.Context) (gasPrice *big.Int, err error) {
-	gasPrice, err = nm.client.SuggestGasPrice(ctx)
+	gasPrice, err = nm.gasPricer.SuggestGasPrice(ctx)
 	if err != nil {
 		return
 	}
@@ -103,7 +106,7 @@ func (nm *SimpleManager) ResetNonce(ctx context.Context, account common.Address)
 	locker.Lock()
 	defer locker.Unlock()
 
-	nonceInLatest, err := nm.client.NonceAt(ctx, account, nil)
+	nonceInLatest, err := nm.pendingStateReader.PendingNonceAt(ctx, account)
 	if err != nil {
 		return err
 	}

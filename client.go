@@ -64,7 +64,7 @@ type Client struct {
 func NewMemoryClient(c *rpc.Client) (*Client, error) {
 	ethc := ethclient.NewClient(c)
 
-	nm, err := nonce.NewSimpleManager(ethc, nonce.NewMemoryStorage())
+	nm, err := nonce.NewSimpleManager(ethc, ethc, nonce.NewMemoryStorage())
 	if err != nil {
 		return nil, err
 	}
