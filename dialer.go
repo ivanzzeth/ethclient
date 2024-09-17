@@ -45,6 +45,8 @@ var dialerOnceMap sync.Map
 var clientMap sync.Map
 
 func DialOnce(url string) EthClientInterface {
+	log.Debug("DialOnce...", "url", url)
+
 	o, _ := dialerOnceMap.LoadOrStore(url, &sync.Once{})
 	once := o.(*sync.Once)
 	once.Do(func() {
@@ -57,10 +59,14 @@ func DialOnce(url string) EthClientInterface {
 			}
 
 			clientMap.Store(url, backend)
+			break
 		}
 	})
 
 	backend, _ := clientMap.Load(url)
+
+	log.Debug("DialOnce successful...", "url", url)
+
 	return backend.(EthClientInterface)
 }
 
