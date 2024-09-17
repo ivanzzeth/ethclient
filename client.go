@@ -25,7 +25,7 @@ import (
 
 var _ bind.ContractBackend = (*Client)(nil)
 var _ bind.PendingContractCaller = (*Client)(nil)
-var _ ethereum.ChainIDReader = (*Client)(nil)
+var _ bind.DeployBackend = (*Client)(nil)
 
 var _ ethereum.ChainReader = (*Client)(nil)
 var _ ethereum.TransactionReader = (*Client)(nil)
@@ -59,15 +59,6 @@ type Client struct {
 	signers         []bind.SignerFn // Method to use for signing the transaction (mandatory)
 
 	subscriber.Subscriber
-}
-
-func Dial(rawurl string) (*Client, error) {
-	rpcClient, err := rpc.Dial(rawurl)
-	if err != nil {
-		return nil, err
-	}
-
-	return NewMemoryClient(rpcClient)
 }
 
 func NewMemoryClient(c *rpc.Client) (*Client, error) {
