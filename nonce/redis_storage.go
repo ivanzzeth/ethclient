@@ -3,6 +3,7 @@ package nonce
 import (
 	"context"
 	"fmt"
+	"math/big"
 	"strconv"
 	"strings"
 	"sync"
@@ -16,19 +17,21 @@ import (
 var _ Storage = &RedisStorage{}
 
 type RedisStorage struct {
+	chainId   *big.Int
 	redisPool redis.Pool
 	rsync     *redsync.Redsync
 }
 
-func NewRedisStorage(pool redis.Pool) *RedisStorage {
+func NewRedisStorage(chainId *big.Int, pool redis.Pool) *RedisStorage {
 	return &RedisStorage{
+		chainId:   chainId,
 		redisPool: pool,
 		rsync:     redsync.New(pool),
 	}
 }
 
 func (s *RedisStorage) NonceLockFrom(from common.Address) sync.Locker {
-	mutexKey := fmt.Sprintf("nonce-lock-%s", strings.ToLower(from.Hex()))
+	mutexKey := fmt.Sprintf("nonce-lock-chain-%s-from%s", s.chainId.String(), strings.ToLower(from.Hex()))
 	mutex := s.rsync.NewMutex(mutexKey)
 
 	m := locker.RedSyncMutexWrapper(*mutex)
@@ -41,7 +44,7 @@ func (s *RedisStorage) GetNonce(account common.Address) (uint64, error) {
 		return 0, err
 	}
 
-	nonceKey := fmt.Sprintf("nonce-account-%s", strings.ToLower(account.Hex()))
+	nonceKey := fmt.Sprintf("nonce-chain-%s-account-%s", s.chainId.String(), strings.ToLower(account.Hex()))
 	nonceStr, err := conn.Get(nonceKey)
 	if err != nil {
 		return 0, err
@@ -65,7 +68,7 @@ func (s *RedisStorage) SetNonce(account common.Address, nonce uint64) error {
 		return err
 	}
 
-	nonceKey := fmt.Sprintf("nonce-account-%s", strings.ToLower(account.Hex()))
+	nonceKey := fmt.Sprintf("nonce-chain-%s-account-%s", s.chainId.String(), strings.ToLower(account.Hex()))
 
 	nonceStr := strconv.Itoa(int(nonce))
 	ok, err := conn.Set(nonceKey, nonceStr)

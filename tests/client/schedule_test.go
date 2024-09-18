@@ -29,6 +29,11 @@ func Test_ScheduleMsg_RandomlyReverted_WithRedis(t *testing.T) {
 	client := helper.SetUpClient(t)
 	defer client.Close()
 
+	chainId, err := client.ChainID(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	// Create a pool with go-redis (or redigo) which is the pool redisync will
 	// use while communicating with Redis. This can also be any pool that
 	// implements the `redis.Pool` interface.
@@ -38,7 +43,7 @@ func Test_ScheduleMsg_RandomlyReverted_WithRedis(t *testing.T) {
 	})
 	pool := goredis.NewPool(redisClient)
 
-	storage := nonce.NewRedisStorage(pool)
+	storage := nonce.NewRedisStorage(chainId, pool)
 	nm, err := nonce.NewSimpleManager(client.Client, storage)
 	if err != nil {
 		t.Fatal(err)
