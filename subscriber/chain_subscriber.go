@@ -156,7 +156,9 @@ func (cs *ChainSubscriber) FilterLogsWithChannel(ctx context.Context, q ethereum
 		for {
 			lastBlock, err := cs.c.BlockNumber(ctx)
 			if err != nil {
-				time.Sleep(cs.retryInterval)
+				// More time to avoid rate-limit
+				log.Warn("get block number failed", "err", err)
+				time.Sleep(5 * cs.retryInterval)
 				continue
 			}
 
@@ -204,7 +206,7 @@ func (cs *ChainSubscriber) FilterLogsWithChannel(ctx context.Context, q ethereum
 					Topics:    q.Topics,
 				})
 				if err != nil {
-					log.Warn("FilterLogsWithChannel filter failed, waiting for retry...", "err", err, "queryHash", queryKey)
+					log.Warn("filtering logs, waiting for retry...", "err", err, "queryHash", queryKey)
 					time.Sleep(cs.retryInterval)
 					continue
 				}
