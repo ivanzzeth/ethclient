@@ -194,7 +194,7 @@ func (cs *ChainSubscriber) FilterLogsWithChannel(ctx context.Context, q ethereum
 					endBlock = lastBlock
 				}
 
-				log.Debug("FilterLogsWithChannel loops", "queryHash", queryKey, "from", startBlock, "to", endBlock)
+				log.Info("start filtering logs", "queryHash", queryKey, "from", startBlock, "to", endBlock)
 
 				lgs, err := cs.c.FilterLogs(ctx, ethereum.FilterQuery{
 					BlockHash: nil,
@@ -204,7 +204,7 @@ func (cs *ChainSubscriber) FilterLogsWithChannel(ctx context.Context, q ethereum
 					Topics:    q.Topics,
 				})
 				if err != nil {
-					log.Debug("FilterLogsWithChannel filter failed, waiting for retry...", "err", err, "queryHash", queryKey)
+					log.Warn("FilterLogsWithChannel filter failed, waiting for retry...", "err", err, "queryHash", queryKey)
 					time.Sleep(cs.retryInterval)
 					continue
 				}
