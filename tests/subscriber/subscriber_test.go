@@ -146,6 +146,7 @@ func testSubscriber(t *testing.T, client *ethclient.Client, confirmations uint64
 		t.Fatal(err)
 	}
 
+	t.Log("FilterLogs...")
 	filteredLogs, err := client.FilterLogs(ctx, ethereum.FilterQuery{
 		FromBlock: big.NewInt(0).SetUint64(fromBlock),
 		ToBlock:   big.NewInt(0).SetUint64(toBlock),

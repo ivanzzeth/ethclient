@@ -44,6 +44,14 @@ func NewChainSubscriber(c *ethclient.Client, storage SubscriberStorage) (*ChainS
 	}, nil
 }
 
+func (s *ChainSubscriber) SetBlocksPerScan(blocksPerScan uint64) {
+	s.blocksPerScan = blocksPerScan
+}
+
+func (s *ChainSubscriber) SetRetryInterval(retryInterval time.Duration) {
+	s.retryInterval = retryInterval
+}
+
 type subscription struct {
 	ctx    context.Context
 	cancel context.CancelFunc
