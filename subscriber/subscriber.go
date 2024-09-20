@@ -9,6 +9,7 @@ import (
 
 // Subscriber represents a set of methods about chain subscription
 type Subscriber interface {
+	Close()
 	// Provided for handler submitting query.
 	SubmitQuery(query ethereum.FilterQuery) error
 	SetQueryHandler(handler QueryHandler) // use QueryHandler instead of SubscriberStorage if handler set

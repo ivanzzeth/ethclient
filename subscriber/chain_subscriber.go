@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
@@ -49,6 +50,17 @@ func NewChainSubscriber(c *ethclient.Client, storage SubscriberStorage) (*ChainS
 	}
 
 	return subscriber, nil
+}
+
+func (s *ChainSubscriber) Close() {
+	log.Debug("close subscriber...")
+	s.queryMap.Range(func(key, _ any) bool {
+		queryHash := key.(common.Hash)
+		ch := s.getQueryLogChannel(queryHash)
+		close(ch)
+
+		return true
+	})
 }
 
 func (s *ChainSubscriber) SetBlocksPerScan(blocksPerScan uint64) {
@@ -108,7 +120,7 @@ func (cs *ChainSubscriber) SubmitQuery(query ethereum.FilterQuery) error {
 		return fmt.Errorf("query already submitted")
 	}
 
-	globalLogsChannel := cs.getQueryLogChannel(query)
+	globalLogsChannel := cs.getQueryLogChannel(queryHash)
 
 	queryOnce.Do(func() {
 		for {
@@ -138,8 +150,7 @@ func (cs *ChainSubscriber) handleQueryLogsChannel(query ethereum.FilterQuery, ch
 	}
 }
 
-func (cs *ChainSubscriber) getQueryLogChannel(query ethereum.FilterQuery) chan types.Log {
-	queryHash := GetQueryHash(cs.chainId, query)
+func (cs *ChainSubscriber) getQueryLogChannel(queryHash common.Hash) chan types.Log {
 	ch, _ := cs.globalLogsChannels.LoadOrStore(queryHash, make(chan types.Log, cs.buffer))
 	globalLogsChannel := ch.(chan types.Log)
 
