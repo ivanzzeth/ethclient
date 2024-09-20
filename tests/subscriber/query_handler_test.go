@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ivanzzeth/ethclient"
@@ -29,6 +30,14 @@ func Test_QueryHandler(t *testing.T) {
 	defer client.Close()
 
 	test_QueryHandler(t, client)
+}
+
+func Test_QueryHandlerWithMockNetworkIssue(t *testing.T) {
+	handler := log.NewTerminalHandlerWithLevel(os.Stdout, log.LevelInfo, true)
+	logger := log.NewLogger(handler)
+	log.SetDefault(logger)
+
+	test_QueryHandlerWithMockNetworkIssue(t)
 }
 
 func test_QueryHandler(t *testing.T, client *ethclient.Client) {
@@ -72,7 +81,85 @@ func test_QueryHandler(t *testing.T, client *ethclient.Client) {
 
 	nonceBefore, _ := client.Client.PendingNonceAt(ctx, helper.Addr)
 	callCount := 3
-	for i := 0; i < callCount; i++ {
+	test_BatchCallTestFunc1(t, ctx, client, contract, callCount)
+
+	time.Sleep(10 * time.Second)
+
+	nonceAfter, _ := client.Client.PendingNonceAt(ctx, helper.Addr)
+
+	t.Log("nonce comparison", nonceBefore, nonceAfter)
+	assert.Equal(t, uint64(callCount), nonceAfter-nonceBefore)
+
+	assert.Equal(t, callCount*2, int(handler.logsCounter.Load()))
+}
+
+func test_QueryHandlerWithMockNetworkIssue(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
+	defer cancel()
+	client := helper.SetUpClient(t)
+
+	chainID, err := client.ChainID(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	storage := subscriber.NewMemoryStorage(chainID)
+	handler := newTestQueryHandler(storage)
+
+	client.SetQueryHandler(handler)
+
+	// Deploy Test contract.
+	contractAddr, txOfContractCreation, contract, err := helper.DeployTestContract(t, ctx, client)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Log("TestContract creation transaction", "txHex", txOfContractCreation.Hash().Hex(), "contract", contractAddr.Hex())
+
+	_, contains := client.WaitTxReceipt(txOfContractCreation.Hash(), 2, 5*time.Second)
+	assert.Equal(t, true, contains)
+
+	startBlock, _ := client.BlockNumber(ctx)
+
+	query := ethereum.FilterQuery{
+		FromBlock: big.NewInt(int64(startBlock)),
+		Addresses: []common.Address{contractAddr},
+	}
+
+	// to mock there's already events emitted before monitoring.
+	test_BatchCallTestFunc1(t, ctx, client, contract, 3)
+
+	err = client.SubmitQuery(query)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	time.Sleep(2 * time.Second)
+
+	// then, due to network issue, client is shutdown.
+	client.Close()
+
+	client = helper.SetUpClient(t)
+
+	// meanwhile, contracts are still emiting events
+	test_BatchCallTestFunc1(t, ctx, client, contract, 4)
+
+	// then client reconnected and subscribed the query again.
+
+	client.SetQueryHandler(handler)
+	err = client.SubmitQuery(query)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	time.Sleep(5 * time.Second)
+
+	// check if there's nothing missing out.
+	assert.Equal(t, 14, int(handler.logsCounter.Load()))
+}
+
+func test_BatchCallTestFunc1(t *testing.T, ctx context.Context, client *ethclient.Client, contract *contracts.Contracts, count int) {
+	for i := 0; i < count; i++ {
 		// Method args
 		arg1 := "hello"
 		arg2 := big.NewInt(100)
@@ -90,15 +177,6 @@ func test_QueryHandler(t *testing.T, client *ethclient.Client) {
 			t.Fatalf("TestFunc1 err: %v", err)
 		}
 	}
-
-	time.Sleep(10 * time.Second)
-
-	nonceAfter, _ := client.Client.PendingNonceAt(ctx, helper.Addr)
-
-	t.Log("nonce comparison", nonceBefore, nonceAfter)
-	assert.Equal(t, uint64(callCount), nonceAfter-nonceBefore)
-
-	assert.Equal(t, callCount*2, int(handler.logsCounter.Load()))
 }
 
 var _ subscriber.QueryHandler = (*testQueryHandler)(nil)

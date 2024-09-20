@@ -54,13 +54,13 @@ func NewChainSubscriber(c *ethclient.Client, storage SubscriberStorage) (*ChainS
 
 func (s *ChainSubscriber) Close() {
 	log.Debug("close subscriber...")
-	s.queryMap.Range(func(key, _ any) bool {
-		queryHash := key.(common.Hash)
-		ch := s.getQueryLogChannel(queryHash)
-		close(ch)
+	// s.queryMap.Range(func(key, _ any) bool {
+	// 	queryHash := key.(common.Hash)
+	// 	ch := s.getQueryLogChannel(queryHash)
+	// 	close(ch)
 
-		return true
-	})
+	// 	return true
+	// })
 }
 
 func (s *ChainSubscriber) SetBlocksPerScan(blocksPerScan uint64) {
