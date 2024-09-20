@@ -117,17 +117,24 @@ func NewClient(
 }
 
 func (c *Client) Close() {
+	log.Info("close client..")
+
+	c.CloseSendMsg()
+
+	c.Subscriber.Close()
+
+	log.Debug("subscriber closed")
+
 	c.Client.Close()
 
-	v, needClose := <-c.respChannel
-	if needClose {
-		c.respChannel <- v
-		close(c.respChannel)
-	}
+	log.Debug("underlying ethclient closed")
+
+	log.Info("client closed..")
 }
 
 func (c *Client) CloseSendMsg() {
 	close(c.reqChannel)
+	log.Info("reqChannel closed")
 }
 
 // RawClient returns underlying ethclient
@@ -425,6 +432,7 @@ func (c *Client) broadcast(ctx context.Context, msgResChan chan<- message.Respon
 		if msg.SimulationOn {
 			tx, returnData, err = c.callAndSendMsg(ctx, msg)
 		} else {
+			log.Info("broadcast msg", "msg", msg)
 			tx, err = c.sendMsg(ctx, msg)
 		}
 		msgResChan <- message.Response{Id: msg.Id(), Tx: tx, ReturnData: returnData, Err: err}

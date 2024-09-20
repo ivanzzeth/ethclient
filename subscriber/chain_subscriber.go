@@ -2,10 +2,13 @@ package subscriber
 
 import (
 	"context"
+	"fmt"
 	"math/big"
+	"sync"
 	"time"
 
 	"github.com/ethereum/go-ethereum"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
@@ -25,6 +28,9 @@ type ChainSubscriber struct {
 	blocksPerScan                    uint64
 	blockConfirmationsOnSubscription uint64
 	storage                          SubscriberStorage
+	queryHandler                     QueryHandler
+	queryMap                         sync.Map
+	globalLogsChannels               sync.Map
 }
 
 // NewChainSubscriber .
@@ -34,14 +40,27 @@ func NewChainSubscriber(c *ethclient.Client, storage SubscriberStorage) (*ChainS
 		return nil, err
 	}
 
-	return &ChainSubscriber{
+	subscriber := &ChainSubscriber{
 		c:             c,
 		chainId:       chainId,
 		buffer:        consts.DefaultMsgBuffer,
 		blocksPerScan: consts.DefaultBlocksPerScan,
 		retryInterval: consts.RetryInterval,
 		storage:       storage,
-	}, nil
+	}
+
+	return subscriber, nil
+}
+
+func (s *ChainSubscriber) Close() {
+	log.Debug("close subscriber...")
+	// s.queryMap.Range(func(key, _ any) bool {
+	// 	queryHash := key.(common.Hash)
+	// 	ch := s.getQueryLogChannel(queryHash)
+	// 	close(ch)
+
+	// 	return true
+	// })
 }
 
 func (s *ChainSubscriber) SetBlocksPerScan(blocksPerScan uint64) {
@@ -77,6 +96,65 @@ func (cs *ChainSubscriber) GetBlockConfirmationsOnSubscription() uint64 {
 
 func (cs *ChainSubscriber) SetBlockConfirmationsOnSubscription(confirmations uint64) {
 	cs.blockConfirmationsOnSubscription = confirmations
+}
+
+func (cs *ChainSubscriber) SetQueryHandler(handler QueryHandler) {
+	cs.queryHandler = handler
+}
+
+func (cs *ChainSubscriber) isQueryHandlerSet() bool {
+	return cs.queryHandler != nil
+}
+
+func (cs *ChainSubscriber) SubmitQuery(query ethereum.FilterQuery) error {
+	queryHash := GetQueryHash(cs.chainId, query)
+	log.Info("submit query", "queryHash", queryHash, "query", query)
+
+	if !cs.isQueryHandlerSet() {
+		return fmt.Errorf("setup queryHandler before calling it")
+	}
+
+	once, loaded := cs.queryMap.LoadOrStore(queryHash, &sync.Once{})
+	queryOnce := once.(*sync.Once)
+	if loaded {
+		return fmt.Errorf("query already submitted")
+	}
+
+	globalLogsChannel := cs.getQueryLogChannel(queryHash)
+
+	queryOnce.Do(func() {
+		for {
+			err := cs.FilterLogsWithChannel(context.Background(), query, globalLogsChannel, true, true)
+			if err != nil {
+				log.Warn("submit query subscription failed, waiting for retrying", "err", err,
+					"queryHash", queryHash)
+				time.Sleep(cs.retryInterval)
+				continue
+			}
+
+			break
+		}
+
+		go cs.handleQueryLogsChannel(query, globalLogsChannel)
+	})
+
+	return nil
+}
+
+func (cs *ChainSubscriber) handleQueryLogsChannel(query ethereum.FilterQuery, ch <-chan types.Log) {
+	for l := range ch {
+		err := cs.queryHandler.HandleQuery(context.Background(), query, l)
+		if err != nil {
+			log.Warn("handle query failed", "err", err, "queryHash", GetQueryHash(cs.chainId, query))
+		}
+	}
+}
+
+func (cs *ChainSubscriber) getQueryLogChannel(queryHash common.Hash) chan types.Log {
+	ch, _ := cs.globalLogsChannels.LoadOrStore(queryHash, make(chan types.Log, cs.buffer))
+	globalLogsChannel := ch.(chan types.Log)
+
+	return globalLogsChannel
 }
 
 func (cs *ChainSubscriber) SubscribeFilterLogs(ctx context.Context, q ethereum.FilterQuery, ch chan<- types.Log) (sub ethereum.Subscription, err error) {
@@ -140,11 +218,17 @@ func (cs *ChainSubscriber) FilterLogsWithChannel(ctx context.Context, q ethereum
 	}
 
 	useStorage := q.ToBlock == nil
+	var queryStateReader QueryStateReader = cs.storage
+	var queryStateWriter QueryStateWriter = cs.storage
+	if cs.isQueryHandlerSet() {
+		queryStateReader = cs.queryHandler
+		queryStateWriter = nil
+	}
 
 	startBlock := fromBlock
 
 	if useStorage {
-		fromBlockInStorage, err := cs.storage.LatestBlockForQuery(ctx, q)
+		fromBlockInStorage, err := queryStateReader.LatestBlockForQuery(ctx, q)
 		if err != nil {
 			return err
 		}
@@ -221,7 +305,7 @@ func (cs *ChainSubscriber) FilterLogsWithChannel(ctx context.Context, q ethereum
 
 				var latestHandledLog types.Log
 				if useStorage {
-					latestHandledLog, err = cs.storage.LatestLogForQuery(ctx, q)
+					latestHandledLog, err = queryStateReader.LatestLogForQuery(ctx, q)
 					if err != nil {
 						log.Error("LatestLogForQuery failed", "err", err, "queryHash", queryKey, "query", q, "block", endBlock)
 						time.Sleep(consts.RetryInterval)
@@ -248,9 +332,9 @@ func (cs *ChainSubscriber) FilterLogsWithChannel(ctx context.Context, q ethereum
 					}
 
 					logsChan <- l
-					if useStorage {
+					if useStorage && queryStateWriter != nil {
 						log.Debug("SaveLatestLogForQuery", "queryHash", queryKey, "query", q, "log", l)
-						err := cs.storage.SaveLatestLogForQuery(ctx, q, l)
+						err := queryStateWriter.SaveLatestLogForQuery(ctx, q, l)
 						if err != nil {
 							log.Error("SaveLatestLogForQuery failed", "err", err, "queryHash", queryKey, "query", q, "block", endBlock)
 							time.Sleep(consts.RetryInterval)
@@ -259,9 +343,9 @@ func (cs *ChainSubscriber) FilterLogsWithChannel(ctx context.Context, q ethereum
 					}
 				}
 
-				if useStorage {
+				if useStorage && queryStateWriter != nil {
 					log.Debug("SaveLatestBlockForQuery", "queryHash", queryKey, "query", q, "block", endBlock)
-					err = cs.storage.SaveLatestBlockForQuery(ctx, q, endBlock)
+					err = queryStateWriter.SaveLatestBlockForQuery(ctx, q, endBlock)
 					if err != nil {
 						log.Error("SaveLatestBlockForQuery failed", "err", err, "queryHash", queryKey, "query", q, "block", endBlock)
 						time.Sleep(consts.RetryInterval)
