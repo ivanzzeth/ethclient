@@ -425,6 +425,7 @@ func (c *Client) broadcast(ctx context.Context, msgResChan chan<- message.Respon
 		if msg.SimulationOn {
 			tx, returnData, err = c.callAndSendMsg(ctx, msg)
 		} else {
+			log.Info("broadcast msg", "msg", msg)
 			tx, err = c.sendMsg(ctx, msg)
 		}
 		msgResChan <- message.Response{Id: msg.Id(), Tx: tx, ReturnData: returnData, Err: err}
