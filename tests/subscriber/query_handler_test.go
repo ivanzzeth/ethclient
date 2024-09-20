@@ -15,6 +15,7 @@ import (
 	"github.com/ivanzzeth/ethclient/contracts"
 	"github.com/ivanzzeth/ethclient/message"
 	"github.com/ivanzzeth/ethclient/subscriber"
+	"github.com/ivanzzeth/ethclient/subscriber/handler"
 	"github.com/ivanzzeth/ethclient/tests/helper"
 	"github.com/stretchr/testify/assert"
 )
@@ -103,39 +104,23 @@ func test_QueryHandler(t *testing.T, client *ethclient.Client) {
 var _ subscriber.QueryHandler = (*testQueryHandler)(nil)
 
 type testQueryHandler struct {
-	subscriber.SubscriberStorage
-	latestBlock atomic.Uint64
+	handler.SimpleQueryHandler
 	logsCounter atomic.Int64
 }
 
 func newTestQueryHandler(storage subscriber.SubscriberStorage) *testQueryHandler {
-	return &testQueryHandler{SubscriberStorage: storage}
+	return &testQueryHandler{
+		SimpleQueryHandler: *handler.NewSimpleQueryHandler(storage),
+	}
 }
 
-func (h *testQueryHandler) HandleQuery(ctx context.Context, query ethereum.FilterQuery, l types.Log) error {
-	log.Info("handle query", "topic", l.Topics[0], "block", l.BlockNumber, "txIndex", l.TxIndex, "index", l.Index)
+func (h *testQueryHandler) HandleQuery(ctx context.Context, query ethereum.FilterQuery, log types.Log) error {
+	err := h.SimpleQueryHandler.HandleQuery(ctx, query, log)
+	if err != nil {
+		return err
+	}
+
 	h.logsCounter.Add(1)
 
-	err := h.handleQuery(ctx, query, l)
-	if err != nil {
-		return err
-	}
-
-	err = h.SaveLatestLogForQuery(ctx, query, l)
-	if err != nil {
-		return err
-	}
-
-	if l.BlockNumber > h.latestBlock.Load() {
-		err = h.SaveLatestBlockForQuery(ctx, query, l.BlockNumber)
-		if err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-func (h *testQueryHandler) handleQuery(ctx context.Context, query ethereum.FilterQuery, log types.Log) error {
 	return nil
 }
