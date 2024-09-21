@@ -10,12 +10,15 @@ import (
 // Subscriber represents a set of methods about chain subscription
 type Subscriber interface {
 	Close()
-	// Provided for handler submitting query.
-	SubmitQuery(query ethereum.FilterQuery) error
-	SetQueryHandler(handler QueryHandler) // use QueryHandler instead of SubscriberStorage if handler set
 	GetQueryHandler() QueryHandler
 	GetBlockConfirmationsOnSubscription() uint64
+
+	SetBuffer(buffer int)
 	SetBlockConfirmationsOnSubscription(confirmations uint64)
+	SetQueryHandler(handler QueryHandler) // use QueryHandler instead of SubscriberStorage if handler set
+
+	// Provided for handler submitting query.
+	SubmitQuery(query ethereum.FilterQuery) error
 	SubscribeFilterLogs(ctx context.Context, query ethereum.FilterQuery, ch chan<- types.Log) (ethereum.Subscription, error)
 	SubscribeNewHead(ctx context.Context, ch chan<- *types.Header) (ethereum.Subscription, error)
 	FilterLogs(ctx context.Context, q ethereum.FilterQuery) (logs []types.Log, err error)

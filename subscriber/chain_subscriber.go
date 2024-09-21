@@ -98,6 +98,10 @@ func (cs *ChainSubscriber) SetBlockConfirmationsOnSubscription(confirmations uin
 	cs.blockConfirmationsOnSubscription = confirmations
 }
 
+func (cs *ChainSubscriber) SetBuffer(buffer int) {
+	cs.buffer = buffer
+}
+
 func (cs *ChainSubscriber) SetQueryHandler(handler QueryHandler) {
 	cs.queryHandler = handler
 }
