@@ -13,6 +13,7 @@ type Subscriber interface {
 	// Provided for handler submitting query.
 	SubmitQuery(query ethereum.FilterQuery) error
 	SetQueryHandler(handler QueryHandler) // use QueryHandler instead of SubscriberStorage if handler set
+	GetQueryHandler() QueryHandler
 	GetBlockConfirmationsOnSubscription() uint64
 	SetBlockConfirmationsOnSubscription(confirmations uint64)
 	SubscribeFilterLogs(ctx context.Context, query ethereum.FilterQuery, ch chan<- types.Log) (ethereum.Subscription, error)

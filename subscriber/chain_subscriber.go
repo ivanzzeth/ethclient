@@ -102,6 +102,10 @@ func (cs *ChainSubscriber) SetQueryHandler(handler QueryHandler) {
 	cs.queryHandler = handler
 }
 
+func (cs *ChainSubscriber) GetQueryHandler() QueryHandler {
+	return cs.queryHandler
+}
+
 func (cs *ChainSubscriber) isQueryHandlerSet() bool {
 	return cs.queryHandler != nil
 }
