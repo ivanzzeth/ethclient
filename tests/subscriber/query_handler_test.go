@@ -55,15 +55,7 @@ func test_QueryHandler(t *testing.T, client *ethclient.Client) {
 	client.SetQueryHandler(handler)
 
 	// Deploy Test contract.
-	contractAddr, txOfContractCreation, contract, err := helper.DeployTestContract(t, ctx, client)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	t.Log("TestContract creation transaction", "txHex", txOfContractCreation.Hash().Hex(), "contract", contractAddr.Hex())
-
-	_, contains := client.WaitTxReceipt(txOfContractCreation.Hash(), 2, 5*time.Second)
-	assert.Equal(t, true, contains)
+	_, _, contract := helper.DeployTestContract(t, ctx, client)
 
 	startBlock, _ := client.BlockNumber(ctx)
 
@@ -109,15 +101,7 @@ func test_QueryHandlerWithMockNetworkIssue(t *testing.T) {
 	client.SetQueryHandler(handler)
 
 	// Deploy Test contract.
-	contractAddr, txOfContractCreation, contract, err := helper.DeployTestContract(t, ctx, client)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	t.Log("TestContract creation transaction", "txHex", txOfContractCreation.Hash().Hex(), "contract", contractAddr.Hex())
-
-	_, contains := client.WaitTxReceipt(txOfContractCreation.Hash(), 2, 5*time.Second)
-	assert.Equal(t, true, contains)
+	contractAddr, _, contract := helper.DeployTestContract(t, ctx, client)
 
 	startBlock, _ := client.BlockNumber(ctx)
 
@@ -134,7 +118,7 @@ func test_QueryHandlerWithMockNetworkIssue(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	time.Sleep(2 * time.Second)
+	time.Sleep(4 * time.Second)
 
 	// then, due to network issue, client is shutdown.
 	client.Close()
@@ -155,7 +139,7 @@ func test_QueryHandlerWithMockNetworkIssue(t *testing.T) {
 	time.Sleep(5 * time.Second)
 
 	// check if there's nothing missing out.
-	assert.Equal(t, 14, int(handler.logsCounter.Load()))
+	assert.Equal(t, 14, int(handler.logsCounter.Load()), "unexpected logs count")
 }
 
 func test_BatchCallTestFunc1(t *testing.T, ctx context.Context, client *ethclient.Client, contract *contracts.Contracts, count int) {
@@ -192,7 +176,7 @@ func newTestQueryHandler(storage subscriber.SubscriberStorage) *testQueryHandler
 	}
 }
 
-func (h *testQueryHandler) HandleQuery(ctx context.Context, query ethereum.FilterQuery, log types.Log) error {
+func (h *testQueryHandler) HandleQuery(ctx context.Context, query subscriber.Query, log types.Log) error {
 	err := h.SimpleQueryHandler.HandleQuery(ctx, query, log)
 	if err != nil {
 		return err

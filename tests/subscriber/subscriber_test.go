@@ -68,15 +68,7 @@ func testSubscriber(t *testing.T, client *ethclient.Client, confirmations uint64
 	defer cancel()
 
 	// Deploy Test contract.
-	contractAddr, txOfContractCreation, contract, err := helper.DeployTestContract(t, ctx, client)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	t.Log("TestContract creation transaction", "txHex", txOfContractCreation.Hash().Hex(), "contract", contractAddr.Hex())
-
-	_, contains := client.WaitTxReceipt(txOfContractCreation.Hash(), 2, 5*time.Second)
-	assert.Equal(t, true, contains)
+	_, _, contract := helper.DeployTestContract(t, ctx, client)
 
 	// Subscribe logs
 

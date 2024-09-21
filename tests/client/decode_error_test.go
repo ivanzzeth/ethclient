@@ -18,10 +18,7 @@ func Test_DecodeJsonRpcError(t *testing.T) {
 
 	ctx := context.Background()
 	// Deploy Test contract.
-	contractAddr, txOfContractCreation, _, err := helper.DeployTestContract(t, ctx, client)
-	if err != nil {
-		t.Fatal(err)
-	}
+	contractAddr, txOfContractCreation, _ := helper.DeployTestContract(t, ctx, client)
 
 	t.Log("TestContract creation transaction", "txHex", txOfContractCreation.Hash().Hex(), "contract", contractAddr.Hex())
 
