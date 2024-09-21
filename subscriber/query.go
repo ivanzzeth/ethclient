@@ -9,6 +9,22 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 )
 
+type Query struct {
+	ChainID *big.Int
+	ethereum.FilterQuery
+}
+
+func NewQuery(chainId *big.Int, q ethereum.FilterQuery) Query {
+	return Query{
+		ChainID:     big.NewInt(0).Set(chainId),
+		FilterQuery: q,
+	}
+}
+
+func (q Query) Hash() common.Hash {
+	return GetQueryHash(q.ChainID, q.FilterQuery)
+}
+
 func GetQueryKey(chainId *big.Int, query ethereum.FilterQuery) string {
 	hash := GetQueryHash(chainId, query)
 

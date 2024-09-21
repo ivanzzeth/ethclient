@@ -31,6 +31,7 @@ import (
 	"github.com/ivanzzeth/ethclient"
 	"github.com/ivanzzeth/ethclient/contracts"
 	"github.com/ivanzzeth/ethclient/message"
+	"github.com/stretchr/testify/assert"
 )
 
 var (
@@ -58,13 +59,23 @@ func SetUpClient(t *testing.T) *ethclient.Client {
 	return client
 }
 
-func DeployTestContract(t *testing.T, ctx context.Context, client *ethclient.Client) (common.Address, *types.Transaction, *contracts.Contracts, error) {
+func DeployTestContract(t *testing.T, ctx context.Context, client *ethclient.Client) (common.Address, *types.Transaction, *contracts.Contracts) {
 	auth, err := client.MessageToTransactOpts(ctx, message.Request{From: Addr})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	return contracts.DeployContracts(auth, client)
+	contractAddr, txOfContractCreation, contract, err := contracts.DeployContracts(auth, client)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Log("TestContract creation transaction", "txHex", txOfContractCreation.Hash().Hex(), "contract", contractAddr.Hex())
+
+	_, contains := client.WaitTxReceipt(txOfContractCreation.Hash(), 1, 5*time.Second)
+	assert.Equal(t, true, contains)
+
+	return contractAddr, txOfContractCreation, contract
 }
 
 func NewTestClient(t *testing.T) *ethclient.Client {

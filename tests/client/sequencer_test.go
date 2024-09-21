@@ -29,19 +29,7 @@ func test_Sequencer_Concurrent(t *testing.T, client *ethclient.Client) {
 	defer cancel()
 
 	// Deploy Test contract.
-	contractAddr, txOfContractCreation, contract, err := helper.DeployTestContract(t, ctx, client)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	t.Log("TestContract creation transaction", "txHex", txOfContractCreation.Hash().Hex(), "contract", contractAddr.Hex())
-
-	_, contains := client.WaitTxReceipt(txOfContractCreation.Hash(), 2, 5*time.Second)
-	if !contains {
-		t.Fatalf("Deploy Contract err: %v", err)
-	}
-
-	assert.Equal(t, true, contains)
+	contractAddr, _, contract := helper.DeployTestContract(t, ctx, client)
 
 	// Call contract method `testFunc1` id -> 0x88655d98
 	contractAbi := contracts.GetTestContractABI()

@@ -20,14 +20,12 @@ import (
 
 func Test_Schedule(t *testing.T) {
 	client := helper.SetUpClient(t)
-	defer client.Close()
 
 	test_Schedule(t, client)
 }
 
 func Test_ScheduleMsg_RandomlyReverted_WithRedis(t *testing.T) {
 	client := helper.SetUpClient(t)
-	defer client.Close()
 
 	chainId, err := client.ChainID(context.Background())
 	if err != nil {
@@ -66,13 +64,14 @@ func testScheduleMsg(t *testing.T, client *ethclient.Client) {
 
 			message.AssignMessageId(req)
 
+			t.Logf("ScheduleMsg#%v", i)
 			client.ScheduleMsg(*req)
 			t.Log("Write MSG to channel")
 		}
 
 		time.Sleep(5 * time.Second)
-		t.Log("Close send channel")
-		client.CloseSendMsg()
+		t.Log("Close client")
+		client.Close()
 	}()
 
 	for resp := range client.ScheduleMsgResponse() {
@@ -98,15 +97,7 @@ func test_ScheduleMsg_RandomlyReverted(t *testing.T, client *ethclient.Client) {
 	defer cancel()
 
 	// Deploy Test contract.
-	contractAddr, txOfContractCreation, _, err := helper.DeployTestContract(t, ctx, client)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	t.Log("TestContract creation transaction", "txHex", txOfContractCreation.Hash().Hex(), "contract", contractAddr.Hex())
-
-	_, contains := client.WaitTxReceipt(txOfContractCreation.Hash(), 2, 5*time.Second)
-	assert.Equal(t, true, contains)
+	contractAddr, _, _ := helper.DeployTestContract(t, ctx, client)
 
 	wantErrMap := make(map[common.Hash]bool, 0)
 
@@ -136,7 +127,7 @@ func test_ScheduleMsg_RandomlyReverted(t *testing.T, client *ethclient.Client) {
 
 		t.Log("Close send channel")
 
-		client.CloseSendMsg()
+		client.Close()
 	}()
 
 	for resp := range client.ScheduleMsgResponse() {

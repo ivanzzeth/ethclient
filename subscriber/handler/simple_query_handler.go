@@ -6,7 +6,6 @@ import (
 
 	"github.com/ethereum/go-ethereum/log"
 
-	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ivanzzeth/ethclient/subscriber"
 )
@@ -22,16 +21,16 @@ func NewSimpleQueryHandler(storage subscriber.SubscriberStorage) *SimpleQueryHan
 	return &SimpleQueryHandler{SubscriberStorage: storage}
 }
 
-func (h *SimpleQueryHandler) HandleQuery(ctx context.Context, query ethereum.FilterQuery, l types.Log) error {
+func (h *SimpleQueryHandler) HandleQuery(ctx context.Context, query subscriber.Query, l types.Log) error {
 	log.Debug("handle query", "topic", l.Topics[0], "block", l.BlockNumber, "txIndex", l.TxIndex, "index", l.Index)
 
-	err := h.SaveLatestLogForQuery(ctx, query, l)
+	err := h.SaveLatestLogForQuery(ctx, query.FilterQuery, l)
 	if err != nil {
 		return err
 	}
 
 	if l.BlockNumber > h.latestBlock.Load() {
-		err = h.SaveLatestBlockForQuery(ctx, query, l.BlockNumber)
+		err = h.SaveLatestBlockForQuery(ctx, query.FilterQuery, l.BlockNumber)
 		if err != nil {
 			return err
 		}

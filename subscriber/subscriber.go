@@ -44,7 +44,7 @@ type QueryHandler interface {
 	// logs may be replayed
 	QueryStateReader
 	// Subscriber will call back it for handling when incoming logs are ready.
-	HandleQuery(ctx context.Context, query ethereum.FilterQuery, log types.Log) error
+	HandleQuery(ctx context.Context, query Query, log types.Log) error
 }
 
 type resubscribeFunc func() (ethereum.Subscription, error)
