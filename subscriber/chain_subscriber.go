@@ -298,13 +298,27 @@ func (cs *ChainSubscriber) FilterLogsWithChannel(ctx context.Context, q ethereum
 
 				log.Info("start filtering logs", "queryHash", query.Hash(), "from", startBlock, "to", endBlock)
 
-				lgs, err := cs.c.FilterLogs(ctx, ethereum.FilterQuery{
+				filterQuery := ethereum.FilterQuery{
 					BlockHash: nil,
 					FromBlock: big.NewInt(0).SetUint64(startBlock),
 					ToBlock:   big.NewInt(0).SetUint64(endBlock),
 					Addresses: q.Addresses,
 					Topics:    q.Topics,
-				})
+				}
+				var lgs []types.Log
+
+				if cs.storage.IsFilterLogsSupported(filterQuery) {
+					lgs, err = cs.storage.FilterLogs(ctx, filterQuery)
+				} else {
+					lgs, err = cs.c.FilterLogs(ctx, filterQuery)
+					if err == nil {
+						saveFilterLogsErr := cs.storage.SaveFilterLogs(filterQuery, lgs)
+						if saveFilterLogsErr != nil {
+							log.Error("save filter logs failed", "err", err, "query", query)
+						}
+					}
+				}
+
 				if err != nil {
 					log.Warn("filtering logs, waiting for retry...", "err", err, "queryHash", query.Hash())
 					time.Sleep(cs.retryInterval)

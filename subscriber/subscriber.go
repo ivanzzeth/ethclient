@@ -33,6 +33,11 @@ type SubscriberStorage interface {
 type QueryStateReader interface {
 	LatestBlockForQuery(ctx context.Context, query ethereum.FilterQuery) (uint64, error)
 	LatestLogForQuery(ctx context.Context, query ethereum.FilterQuery) (types.Log, error)
+
+	// Save query result to save network io
+	FilterLogs(ctx context.Context, q ethereum.FilterQuery) (logs []types.Log, err error)
+	// Report whether client can use `FilterLogs` in the storage instead of ethclient.FilterLogs
+	IsFilterLogsSupported(q ethereum.FilterQuery) bool
 }
 
 type QueryStateWriter interface {
@@ -40,6 +45,9 @@ type QueryStateWriter interface {
 	SaveLatestBlockForQuery(ctx context.Context, query ethereum.FilterQuery, blockNum uint64) error
 	// Must call the function after each log was handled .
 	SaveLatestLogForQuery(ctx context.Context, query ethereum.FilterQuery, log types.Log) error
+
+	// Save query result to save network io
+	SaveFilterLogs(q ethereum.FilterQuery, logs []types.Log) (err error)
 }
 
 // Used only for handler set && query.ToBlock == nil

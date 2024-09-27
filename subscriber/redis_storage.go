@@ -14,6 +14,8 @@ import (
 	"github.com/ivanzzeth/ethclient/ds/locker"
 )
 
+var _ SubscriberStorage = (*RedisStorage)(nil)
+
 type RedisStorage struct {
 	chainId   *big.Int
 	redisPool redis.Pool
@@ -91,6 +93,14 @@ func (s *RedisStorage) LatestLogForQuery(ctx context.Context, query ethereum.Fil
 	return l, nil
 }
 
+func (s *RedisStorage) FilterLogs(ctx context.Context, q ethereum.FilterQuery) (logs []types.Log, err error) {
+	return nil, fmt.Errorf("not implemented")
+}
+
+func (s *RedisStorage) IsFilterLogsSupported(q ethereum.FilterQuery) bool {
+	return false
+}
+
 func (s *RedisStorage) SaveLatestBlockForQuery(ctx context.Context, query ethereum.FilterQuery, blockNum uint64) error {
 	conn, err := s.redisPool.Get(ctx)
 	if err != nil {
@@ -132,5 +142,9 @@ func (s *RedisStorage) SaveLatestLogForQuery(ctx context.Context, query ethereum
 		return err
 	}
 
+	return nil
+}
+
+func (s *RedisStorage) SaveFilterLogs(q ethereum.FilterQuery, logs []types.Log) (err error) {
 	return nil
 }

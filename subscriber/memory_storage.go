@@ -2,12 +2,15 @@ package subscriber
 
 import (
 	"context"
+	"fmt"
 	"math/big"
 	"sync"
 
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/core/types"
 )
+
+var _ SubscriberStorage = (*MemoryStorage)(nil)
 
 type MemoryStorage struct {
 	chainId  *big.Int
@@ -34,6 +37,14 @@ func (s *MemoryStorage) LatestLogForQuery(ctx context.Context, query ethereum.Fi
 	return ret.(types.Log), nil
 }
 
+func (s *MemoryStorage) FilterLogs(ctx context.Context, q ethereum.FilterQuery) (logs []types.Log, err error) {
+	return nil, fmt.Errorf("not implemented")
+}
+
+func (s *MemoryStorage) IsFilterLogsSupported(q ethereum.FilterQuery) bool {
+	return false
+}
+
 func (s *MemoryStorage) SaveLatestBlockForQuery(ctx context.Context, query ethereum.FilterQuery, blockNum uint64) error {
 	s.blockMap.Store(GetQueryKey(s.chainId, query), blockNum)
 	return nil
@@ -41,5 +52,9 @@ func (s *MemoryStorage) SaveLatestBlockForQuery(ctx context.Context, query ether
 
 func (s *MemoryStorage) SaveLatestLogForQuery(ctx context.Context, query ethereum.FilterQuery, log types.Log) error {
 	s.logMap.Store(GetQueryKey(s.chainId, query), log)
+	return nil
+}
+
+func (s *MemoryStorage) SaveFilterLogs(q ethereum.FilterQuery, logs []types.Log) (err error) {
 	return nil
 }
