@@ -314,7 +314,9 @@ func (cs *ChainSubscriber) FilterLogsWithChannel(ctx context.Context, q ethereum
 					if err == nil {
 						saveFilterLogsErr := cs.storage.SaveFilterLogs(filterQuery, lgs)
 						if saveFilterLogsErr != nil {
-							log.Error("save filter logs failed", "err", err, "query", query)
+							log.Error("save filter logs failed", "err", saveFilterLogsErr, "query", query)
+							time.Sleep(cs.retryInterval)
+							continue Scan
 						}
 					}
 				}
@@ -322,7 +324,7 @@ func (cs *ChainSubscriber) FilterLogsWithChannel(ctx context.Context, q ethereum
 				if err != nil {
 					log.Warn("filtering logs, waiting for retry...", "err", err, "queryHash", query.Hash())
 					time.Sleep(cs.retryInterval)
-					continue
+					continue Scan
 				}
 
 				var latestHandledLog types.Log
