@@ -65,7 +65,7 @@ func test_Sequencer_Concurrent(t *testing.T, client *ethclient.Client) {
 				}
 				msg.SetIdWithNonce(int64(nonce))
 
-				client.ScheduleMsg(*msg)
+				client.ScheduleMsg(msg)
 			}
 		}
 
@@ -73,7 +73,7 @@ func test_Sequencer_Concurrent(t *testing.T, client *ethclient.Client) {
 		// client.CloseSendMsg()
 	}()
 
-	// for resp := range client.ScheduleMsgResponse() {
+	// for resp := range client.Response() {
 	// 	t.Logf("resp: %+v", resp)
 	// }
 

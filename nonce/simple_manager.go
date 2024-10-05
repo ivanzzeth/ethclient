@@ -5,6 +5,7 @@ import (
 	"math/big"
 	"sync"
 
+	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
 )
 
@@ -69,6 +70,17 @@ func (nm *SimpleManager) PendingNonceAt(ctx context.Context, account common.Addr
 	}
 
 	return nonce, nil
+}
+
+func (nm *SimpleManager) EstimateGas(ctx context.Context, msg ethereum.CallMsg) (uint64, error) {
+	gas, err := nm.backend.EstimateGas(ctx, msg)
+	if err != nil {
+		return 0, err
+	}
+
+	gas = gas * 15 / 10
+
+	return gas, nil
 }
 
 func (nm *SimpleManager) SuggestGasPrice(ctx context.Context) (gasPrice *big.Int, err error) {

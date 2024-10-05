@@ -11,11 +11,12 @@ import (
 )
 
 type Message struct {
-	Root   *common.Hash
-	Parent *common.Hash // it's created by parent if not nil
-	Req    *Request
-	Resp   *Response // not nil if inflight
-	Status MessageStatus
+	Root    *common.Hash
+	Parent  *common.Hash // it's created by parent if not nil
+	Req     *Request
+	Resp    *Response // not nil if inflight
+	Receipt *Receipt  // not nil if on-chain
+	Status  MessageStatus
 }
 
 func (m *Message) Id() common.Hash {
@@ -64,6 +65,11 @@ type Response struct {
 	Err        error
 }
 
+type Receipt struct {
+	Id        common.Hash
+	TxReceipt *types.Receipt
+}
+
 func AssignMessageId(msg *Request) *Request {
 	uid, _ := uuid.NewUUID()
 	uidBytes, _ := uid.MarshalBinary()
@@ -85,15 +91,29 @@ func (m *Request) Id() common.Hash {
 	return m.id
 }
 
-func (q *Request) SetId(id common.Hash) {
+func (q *Request) SetId(id common.Hash) *Request {
 	q.id = id
+	return q
 }
 
-func (q *Request) SetIdWithNonce(nonce int64) {
+func (q *Request) SetIdWithNonce(nonce int64) *Request {
 	q.id = *GenerateMessageIdByNonce(nonce)
+	return q
+}
+
+func (q *Request) SetRandomId() *Request {
+	AssignMessageId(q)
+	return q
 }
 
 func (q *Request) Copy() *Request {
+	req := q.CopyWithoutId()
+	req.id = q.id
+
+	return req
+}
+
+func (q *Request) CopyWithoutId() *Request {
 	var (
 		gasOnEstimationFailed uint64
 		value, gasPrice       *big.Int

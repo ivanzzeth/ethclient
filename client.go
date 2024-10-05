@@ -13,10 +13,10 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rpc"
+	"github.com/ivanzzeth/ethclient/account"
 	"github.com/ivanzzeth/ethclient/common/consts"
 	"github.com/ivanzzeth/ethclient/message"
 	"github.com/ivanzzeth/ethclient/nonce"
@@ -47,16 +47,19 @@ var _ ethereum.ChainIDReader = (*Client)(nil)
 
 type Client struct {
 	*ethclient.Client
-	rpcClient *rpc.Client
+	rpcClient   *rpc.Client
+	accRegistry account.Registry
 	nonce.Manager
+	msgManager      message.Manager
+	broadcaster     message.Broadcaster
 	reqChannel      chan message.Request
 	scheduleChannel chan message.Request
 	respChannel     chan message.Response
+	receiptChannel  chan message.Receipt
 	msgBuffer       int
 	msgStore        message.Storage
 	msgSequencer    message.Sequencer
 	abi             abi.ABI
-	signers         []bind.SignerFn // Method to use for signing the transaction (mandatory)
 
 	subscriber.Subscriber
 }
@@ -68,6 +71,8 @@ func NewMemoryClient(c *rpc.Client) (*Client, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	accRegistry := account.NewSimpleRegistry(chainId)
 
 	nm, err := nonce.NewSimpleManager(ethc, nonce.NewMemoryStorage())
 	if err != nil {
@@ -81,18 +86,22 @@ func NewMemoryClient(c *rpc.Client) (*Client, error) {
 
 	msgSequencer := message.NewMemorySequencer(ethc, msgStore, consts.DefaultMsgBuffer)
 
+	msgManager := message.NewSimpleManager(ethc, nm, accRegistry, msgStore)
+
 	subscriber, err := subscriber.NewChainSubscriber(ethc, subscriber.NewMemoryStorage(chainId))
 	if err != nil {
 		return nil, err
 	}
 
-	return NewClient(c, msgStore, nm, subscriber, msgSequencer)
+	return NewClient(c, accRegistry, msgStore, nm, msgManager, subscriber, msgSequencer)
 }
 
 func NewClient(
 	c *rpc.Client,
+	accRegistry account.Registry,
 	msgStore message.Storage,
 	nonceManager nonce.Manager,
+	msgManager message.Manager,
 	subscriber subscriber.Subscriber,
 	sequencer message.Sequencer,
 ) (*Client, error) {
@@ -101,13 +110,17 @@ func NewClient(
 	cli := &Client{
 		Client:          ethc,
 		rpcClient:       c,
+		accRegistry:     accRegistry,
 		reqChannel:      make(chan message.Request, consts.DefaultMsgBuffer),
 		scheduleChannel: make(chan message.Request, consts.DefaultMsgBuffer),
 		respChannel:     make(chan message.Response, consts.DefaultMsgBuffer),
+		receiptChannel:  make(chan message.Receipt, consts.DefaultMsgBuffer),
 		msgBuffer:       consts.DefaultMsgBuffer,
 		msgStore:        msgStore,
 		msgSequencer:    sequencer,
 		Manager:         nonceManager,
+		msgManager:      msgManager,
+		broadcaster:     message.NewSimpleBroadcaster(msgManager),
 		Subscriber:      subscriber,
 	}
 
@@ -151,57 +164,16 @@ func (c *Client) SetSubscriber(s subscriber.Subscriber) {
 }
 
 func (c *Client) GetSigner() bind.SignerFn {
-	// combine all signerFn
-	return func(a common.Address, t *types.Transaction) (tx *types.Transaction, err error) {
-		if len(c.signers) == 0 {
-			return nil, fmt.Errorf("no signerFn registered")
-		}
-
-		for i, fn := range c.signers {
-			tx, err = fn(a, t)
-			log.Debug("try to call signerFn", "index", i, "err", err, "account", a)
-
-			if err != nil {
-				continue
-			}
-
-			return tx, nil
-		}
-
-		return nil, bind.ErrNotAuthorized
-	}
+	return c.accRegistry.GetSigner()
 }
 
 func (c *Client) RegisterSigner(signerFn bind.SignerFn) {
-	log.Info("register signerFn for signing...")
-	c.signers = append(c.signers, signerFn)
+	c.accRegistry.RegisterSigner(signerFn)
 }
 
 // Registers the private key used for signing txs.
 func (c *Client) RegisterPrivateKey(ctx context.Context, key *ecdsa.PrivateKey) error {
-	chainID, err := c.ChainID(ctx)
-	if err != nil {
-		return err
-	}
-	keyAddr := crypto.PubkeyToAddress(key.PublicKey)
-	if chainID == nil {
-		return bind.ErrNoChainID
-	}
-	signer := types.LatestSignerForChainID(chainID)
-	signerFn := func(address common.Address, tx *types.Transaction) (*types.Transaction, error) {
-		if address != keyAddr {
-			return nil, bind.ErrNotAuthorized
-		}
-		signature, err := crypto.Sign(signer.Hash(tx).Bytes(), key)
-		if err != nil {
-			return nil, err
-		}
-		return tx.WithSignature(signer, signature)
-	}
-
-	c.RegisterSigner(signerFn)
-
-	return nil
+	return c.accRegistry.RegisterPrivateKey(ctx, key)
 }
 
 func (c *Client) SetMsgBuffer(buffer int) {
@@ -216,8 +188,8 @@ func (c *Client) NewMethodData(a abi.ABI, methodName string, args ...interface{}
 	return a.Pack(methodName, args...)
 }
 
-func (c *Client) ScheduleMsg(req message.Request) {
-	c.reqChannel <- req
+func (c *Client) ScheduleMsg(req *message.Request) {
+	c.reqChannel <- *req.Copy()
 }
 
 func (c *Client) ReplayMsg(msgId common.Hash) (newMsgId common.Hash, err error) {
@@ -226,7 +198,7 @@ func (c *Client) ReplayMsg(msgId common.Hash) (newMsgId common.Hash, err error) 
 		return
 	}
 
-	copiedReq := msg.Req.Copy()
+	copiedReq := msg.Req.CopyWithoutId()
 
 	message.AssignMessageId(copiedReq)
 
@@ -236,174 +208,173 @@ func (c *Client) ReplayMsg(msgId common.Hash) (newMsgId common.Hash, err error) 
 	return
 }
 
-func (c *Client) ScheduleMsgResponse() <-chan message.Response {
+func (c *Client) Response() <-chan message.Response {
 	return c.respChannel
+}
+
+func (c *Client) CallMsg(ctx context.Context, msg message.Request, blockNumber *big.Int) (returnData []byte, err error) {
+	resp := c.msgManager.CallMsg(ctx, msg, blockNumber)
+	return resp.ReturnData, resp.Err
 }
 
 func (c *Client) sendMsgTask(ctx context.Context) {
 	// Pipepline: reqChannel => scheduler => sequencer => broadcaster
 
-	go c.schedule(c.respChannel)
+	go c.schedule()
 
-	go c.sequence(c.respChannel)
+	go c.sequence()
 
-	go c.broadcast(ctx, c.respChannel)
+	go c.broadcast(ctx)
 }
 
-func (c *Client) schedule(msgResChan chan<- message.Response) {
+func (c *Client) schedule() {
 	for req := range c.reqChannel {
 		log.Debug("start scheduling msg...", "msgId", req.Id())
-		if req.Id() == common.BytesToHash([]byte{}) {
-			msgResChan <- message.Response{
-				Id:  req.Id(),
-				Err: fmt.Errorf("no msgId provided"),
-			}
-			continue
-		}
+		func() {
+			var err error
+			var resp message.Response
+			resp.Id = req.Id()
+			defer func() {
+				if err != nil {
+					log.Debug("Client.schedule UpdateResponse", "resp", resp)
 
-		if !c.msgStore.HasMsg(req.Id()) {
-			// message.MessageStatusSubmitted
-			err := c.msgStore.AddMsg(req)
-			if err != nil {
-				msgResChan <- message.Response{
-					Id:  req.Id(),
-					Err: fmt.Errorf("no msgId provided"),
+					resp.Err = err
+					c.msgStore.UpdateResponse(resp.Id, resp)
+					c.respChannel <- resp
 				}
-			}
-		}
-
-		msg, err := c.msgStore.GetMsg(req.Id())
-		if err != nil {
-			msgResChan <- message.Response{
-				Id:  req.Id(),
-				Err: err,
-			}
-		}
-
-		now := time.Now().UnixNano()
-
-		if msg.Req.Interval != 0 {
-			if msg.Req.StartTime == 0 {
-				msg.Req.StartTime = now
-			}
-			err = c.msgStore.UpdateMsg(msg)
-			if err != nil {
-				msgResChan <- message.Response{
-					Id:  req.Id(),
-					Err: err,
-				}
-			}
-		}
-
-		if msg.Req.ExpirationTime != 0 && msg.Req.ExpirationTime < now {
-			// timeout
-			err = c.msgStore.UpdateMsgStatus(req.Id(), message.MessageStatusExpired)
-			if err != nil {
-				msgResChan <- message.Response{
-					Id:  req.Id(),
-					Err: err,
-				}
-				continue
-			}
-
-			msgResChan <- message.Response{
-				Id:  req.Id(),
-				Err: fmt.Errorf("timeout"),
-			}
-
-			continue
-		}
-
-		req = *msg.Req
-
-		if msg.Req.StartTime >= now {
-			log.Debug("scheduler found it's not time for executing the msg", "msg", msg.Id().Hex())
-			go func() {
-				duration := msg.Req.StartTime - time.Now().UnixNano()
-				time.Sleep(time.Duration(duration))
-				c.reqChannel <- *msg.Req
 			}()
-			continue
-		}
 
-		c.scheduleChannel <- *msg.Req
-
-		err = c.msgStore.UpdateMsgStatus(req.Id(), message.MessageStatusScheduled)
-		if err != nil {
-			msgResChan <- message.Response{
-				Id:  req.Id(),
-				Err: fmt.Errorf("no msgId provided"),
+			if req.Id() == common.BytesToHash([]byte{}) {
+				panic(fmt.Errorf("no msgId provided"))
 			}
-		}
 
-		if msg.Req.Interval != 0 {
-			newReq := req.Copy()
+			if c.msgStore.HasMsg(req.Id()) {
+				resp.Err = fmt.Errorf("already known")
+				return
+			}
 
-			newReq.AfterMsg = nil
-			newReq.StartTime = now + int64(req.Interval)
-
-			message.AssignMessageId(newReq)
-			log.Debug("scheduler creates new one for long-term ticker task", "msg", msg.Id().Hex(), "new_msg", newReq.Id().Hex())
-
-			err = c.msgStore.AddMsg(*newReq)
+			// message.MessageStatusSubmitted
+			err = c.msgStore.AddMsg(req)
 			if err != nil {
-				msgResChan <- message.Response{
-					Id:  newReq.Id(),
-					Err: err,
-				}
-				continue
+				err = fmt.Errorf("no msgId provided: %v", err)
+				return
 			}
 
-			newMsg, err := c.msgStore.GetMsg(newReq.Id())
+			msg, err := c.msgStore.GetMsg(req.Id())
 			if err != nil {
-				msgResChan <- message.Response{
-					Id:  newReq.Id(),
-					Err: err,
-				}
-				continue
-			}
-			parent := req.Id()
-			newMsg.Parent = &parent
-			if msg.Root != nil {
-				newMsg.Root = msg.Root
-			} else {
-				newMsg.Root = &parent
+				return
 			}
 
-			err = c.msgStore.UpdateMsg(newMsg)
+			now := time.Now().UnixNano()
+
+			if msg.Req.Interval != 0 {
+				if msg.Req.StartTime == 0 {
+					msg.Req.StartTime = now
+				}
+				err = c.msgStore.UpdateMsg(msg)
+				if err != nil {
+					return
+				}
+			}
+
+			if msg.Req.ExpirationTime != 0 && msg.Req.ExpirationTime < now {
+				// timeout
+				err = c.msgStore.UpdateMsgStatus(req.Id(), message.MessageStatusExpired)
+				if err != nil {
+					return
+				}
+
+				err = fmt.Errorf("timeout")
+			}
+
+			req = *msg.Req
+
+			if msg.Req.StartTime >= now {
+				log.Debug("scheduler found it's not time for executing the msg", "msg", msg.Id().Hex())
+				go func() {
+					duration := msg.Req.StartTime - time.Now().UnixNano()
+					time.Sleep(time.Duration(duration))
+					c.reqChannel <- *msg.Req
+				}()
+				return
+			}
+
+			c.scheduleChannel <- *msg.Req
+
+			err = c.msgStore.UpdateMsgStatus(req.Id(), message.MessageStatusScheduled)
 			if err != nil {
-				msgResChan <- message.Response{
-					Id:  newReq.Id(),
-					Err: err,
-				}
-				continue
+				err = fmt.Errorf("no msgId provided")
+				return
 			}
 
-			c.reqChannel <- *newReq
-		}
+			if msg.Req.Interval != 0 {
+				newReq := req.CopyWithoutId()
+
+				newReq.AfterMsg = nil
+				newReq.StartTime = now + int64(req.Interval)
+
+				message.AssignMessageId(newReq)
+				log.Debug("scheduler creates new one for long-term ticker task", "msg", msg.Id().Hex(), "new_msg", newReq.Id().Hex())
+
+				err = c.msgStore.AddMsg(*newReq)
+				if err != nil {
+					return
+				}
+
+				newMsg, err := c.msgStore.GetMsg(newReq.Id())
+				if err != nil {
+					resp.Id = newReq.Id()
+					return
+				}
+				parent := req.Id()
+				newMsg.Parent = &parent
+				if msg.Root != nil {
+					newMsg.Root = msg.Root
+				} else {
+					newMsg.Root = &parent
+				}
+
+				err = c.msgStore.UpdateMsg(newMsg)
+				if err != nil {
+					resp.Id = newReq.Id()
+					return
+				}
+
+				c.reqChannel <- *newReq
+			}
+		}()
 	}
 
 	log.Debug("close scheduler...")
 	close(c.scheduleChannel)
 }
 
-func (c *Client) sequence(msgResChan chan<- message.Response) {
+func (c *Client) sequence() {
 	for msg := range c.scheduleChannel {
-		resp := message.Response{Id: msg.Id()}
+		log.Debug("sequence msg...", "msg", msg)
+		func() {
+			var err error
+			var resp message.Response
+			resp.Id = msg.Id()
+			defer func() {
+				if err != nil {
+					log.Debug("Client.sequence UpdateResponse", "resp", resp)
 
-		err := c.msgSequencer.PushMsg(msg)
-		if err != nil {
-			resp.Err = err
-			msgResChan <- resp
-			continue
-		}
+					resp.Err = err
+					c.msgStore.UpdateResponse(resp.Id, resp)
+					c.respChannel <- resp
+				}
+			}()
+			err = c.msgSequencer.PushMsg(msg)
+			if err != nil {
+				return
+			}
 
-		err = c.msgStore.UpdateMsgStatus(msg.Id(), message.MessageStatusQueued)
-		if err != nil {
-			resp.Err = err
-			msgResChan <- resp
-			continue
-		}
+			err = c.msgStore.UpdateMsgStatus(msg.Id(), message.MessageStatusQueued)
+			if err != nil {
+				return
+			}
+		}()
 	}
 
 	log.Debug("close sequencer...")
@@ -411,191 +382,51 @@ func (c *Client) sequence(msgResChan chan<- message.Response) {
 	c.msgSequencer.Close()
 }
 
-func (c *Client) broadcast(ctx context.Context, msgResChan chan<- message.Response) {
+func (c *Client) broadcast(ctx context.Context) {
 	for {
-		msg, err := c.msgSequencer.PopMsg()
-		if err != nil {
-			if errors.Is(err, message.ErrPendingChannelClosed) {
-				log.Debug("close responseChannel...")
+		exit := func() (exit bool) {
+			var err error
 
-				close(msgResChan)
-				break
-			}
-			msgResChan <- message.Response{Id: msg.Id(), Err: err}
-			continue
-		}
-
-		var (
-			returnData []byte
-			tx         *types.Transaction
-		)
-		if msg.SimulationOn {
-			tx, returnData, err = c.callAndSendMsg(ctx, msg)
-		} else {
-			log.Info("broadcast msg", "msg", msg)
-			tx, err = c.sendMsg(ctx, msg)
-		}
-		msgResChan <- message.Response{Id: msg.Id(), Tx: tx, ReturnData: returnData, Err: err}
-	}
-}
-
-func (c *Client) CallAndSendMsg(ctx context.Context, msg message.Request) (*types.Transaction, []byte, error) {
-	err := c.msgStore.AddMsg(msg)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	tx, returnData, err := c.callAndSendMsg(ctx, msg)
-	return tx, returnData, err
-}
-
-func (c *Client) callAndSendMsg(ctx context.Context, msg message.Request) (*types.Transaction, []byte, error) {
-	returnData, err := c.CallMsg(ctx, msg, nil)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	tx, err := c.sendMsg(ctx, msg)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	return tx, returnData, err
-}
-
-func (c *Client) CallMsg(ctx context.Context, msg message.Request, blockNumber *big.Int) (returnData []byte, err error) {
-	if msg.AfterMsg != nil {
-		return nil, fmt.Errorf("field AfterMsg ONLY available on calling ScheduleMsg")
-	}
-
-	ethMesg := ethereum.CallMsg{
-		From:       msg.From,
-		To:         msg.To,
-		Gas:        msg.Gas,
-		GasPrice:   msg.GasPrice,
-		Value:      msg.Value,
-		Data:       msg.Data,
-		AccessList: msg.AccessList,
-	}
-
-	return c.Client.CallContract(ctx, ethMesg, blockNumber)
-}
-
-func (c *Client) SendMsg(ctx context.Context, msg message.Request) (signedTx *types.Transaction, err error) {
-	if msg.AfterMsg != nil {
-		return nil, fmt.Errorf("field AfterMsg ONLY available on calling ScheduleMsg")
-	}
-
-	err = c.msgStore.AddMsg(msg)
-	if err != nil {
-		return nil, err
-	}
-
-	return c.sendMsg(ctx, msg)
-}
-
-func (c *Client) sendMsg(ctx context.Context, msg message.Request) (signedTx *types.Transaction, err error) {
-	log.Debug("broadcast msg", "msg", msg)
-	tx, err := c.NewTransaction(ctx, msg)
-	if err != nil {
-		return nil, fmt.Errorf("NewTransaction err: %v", err)
-	}
-
-	err = c.msgStore.UpdateMsgStatus(msg.Id(), message.MessageStatusNonceAssigned)
-	if err != nil {
-		return nil, err
-	}
-
-	// chainID, err := c.Client.ChainID(ctx)
-	// if err != nil {
-	// 	return nil, fmt.Errorf("get Chain ID err: %v", err)
-	// }
-
-	// signedTx, err = types.SignTx(tx, types.NewEIP2930Signer(chainID), msg.PrivateKey)
-	// if err != nil {
-	// 	return nil, fmt.Errorf("SignTx err: %v", err)
-	// }
-
-	signerFn := c.GetSigner()
-	signedTx, err = signerFn(msg.From, tx)
-	if err != nil {
-		return nil, err
-	}
-
-	err = c.Client.SendTransaction(ctx, signedTx)
-	if err != nil {
-		return nil, fmt.Errorf("SendTransaction err: %v", err)
-	}
-
-	err = c.msgStore.UpdateMsgStatus(msg.Id(), message.MessageStatusInflight)
-	if err != nil {
-		return nil, err
-	}
-
-	resp := message.Response{
-		Id:  msg.Id(),
-		Tx:  signedTx,
-		Err: err,
-	}
-
-	err = c.msgStore.UpdateResponse(msg.Id(), resp)
-	if err != nil {
-		log.Debug("update msg response failed", "err", err, "msgId", msg.Id().Hex())
-		return nil, err
-	}
-
-	log.Debug("Send Message successfully", "txHash", signedTx.Hash().Hex(), "from", msg.From.Hex(),
-		"to", msg.To.Hex(), "value", msg.Value)
-
-	return signedTx, nil
-}
-
-func (c *Client) NewTransaction(ctx context.Context, msg message.Request) (*types.Transaction, error) {
-	if msg.To == nil {
-		to := common.HexToAddress("0x0")
-		msg.To = &to
-	}
-
-	if msg.Gas == 0 {
-		ethMesg := ethereum.CallMsg{
-			From:       msg.From,
-			To:         msg.To,
-			Gas:        msg.Gas,
-			GasPrice:   msg.GasPrice,
-			Value:      msg.Value,
-			Data:       msg.Data,
-			AccessList: msg.AccessList,
-		}
-
-		gas, err := c.EstimateGas(ctx, ethMesg)
-		if err != nil {
-			if msg.GasOnEstimationFailed == nil {
-				return nil, err
+			msg, err := c.msgSequencer.PopMsg()
+			if err != nil {
+				if errors.Is(err, message.ErrPendingChannelClosed) {
+					log.Debug("close responseChannel...")
+					close(c.respChannel)
+					close(c.receiptChannel)
+					return true
+				}
+				log.Error("unexpected broadcast case", "err", err)
+				return true
 			}
 
-			msg.Gas = *msg.GasOnEstimationFailed
-		} else {
-			// Multiplier 1.5
-			msg.Gas = gas * 1500 / 1000
+			var resp message.Response
+			resp.Id = msg.Id()
+			defer func() {
+				log.Debug("Client.broadcast UpdateResponse", "resp", resp, "msgId", msg.Id())
+
+				c.msgStore.UpdateResponse(resp.Id, resp)
+				c.respChannel <- resp
+			}()
+
+			if msg.SimulationOn {
+				resp = c.msgManager.CallMsg(ctx, msg, nil)
+			}
+
+			if resp.Err == nil {
+				sendResp := c.broadcaster.SendMsg(ctx, msg)
+				log.Debug("broadcaster.SendMsg resp", "resp", sendResp)
+				resp.Id = sendResp.Id
+				resp.Err = sendResp.Err
+				resp.Tx = sendResp.Tx
+			}
+
+			return
+		}()
+
+		if exit {
+			return
 		}
 	}
-
-	if msg.GasPrice == nil || msg.GasPrice.Uint64() == 0 {
-		var err error
-		msg.GasPrice, err = c.SuggestGasPrice(ctx)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	nonce, err := c.PendingNonceAt(ctx, msg.From)
-	if err != nil {
-		return nil, err
-	}
-
-	tx := types.NewTransaction(nonce, *msg.To, msg.Value, msg.Gas, msg.GasPrice, msg.Data)
-
-	return tx, nil
 }
 
 func (c *Client) PendingNonceAt(ctx context.Context, account common.Address) (uint64, error) {
@@ -607,48 +438,21 @@ func (c *Client) SuggestGasPrice(ctx context.Context) (gasPrice *big.Int, err er
 }
 
 func (c *Client) WaitTxReceipt(txHash common.Hash, confirmations uint64, timeout time.Duration) (*types.Receipt, bool) {
-	startTime := time.Now()
-	for {
-		currTime := time.Now()
-		elapsedTime := currTime.Sub(startTime)
-		if elapsedTime >= timeout {
-			return nil, false
-		}
+	return c.msgManager.WaitTxReceipt(txHash, confirmations, timeout)
+}
 
-		receipt, err := c.Client.TransactionReceipt(context.Background(), txHash)
-		if err != nil {
-			continue
-		}
+func (c *Client) WaitMsgResponse(msgId common.Hash, timeout time.Duration) (*message.Response, bool) {
+	return c.msgManager.WaitMsgResponse(msgId, timeout)
+}
 
-		block, err := c.Client.BlockNumber(context.Background())
-		if err != nil {
-			continue
-		}
-
-		if block >= receipt.BlockNumber.Uint64()+confirmations {
-			return receipt, true
-		}
-	}
+func (c *Client) WaitMsgReceipt(msgId common.Hash, confirmations uint64, timeout time.Duration) (*message.Receipt, bool) {
+	return c.msgManager.WaitMsgReceipt(msgId, confirmations, timeout)
 }
 
 // MessageToTransactOpts .
 // NOTE: You must provide private key for signature.
 func (c *Client) MessageToTransactOpts(ctx context.Context, msg message.Request) (*bind.TransactOpts, error) {
-	nonce, err := c.PendingNonceAt(ctx, msg.From)
-	if err != nil {
-		return nil, err
-	}
-
-	auth := &bind.TransactOpts{}
-
-	auth.From = msg.From
-	auth.Signer = c.GetSigner()
-	auth.Nonce = big.NewInt(int64(nonce))
-	auth.Value = msg.Value
-	auth.GasLimit = msg.Gas
-	auth.GasPrice = msg.GasPrice
-
-	return auth, nil
+	return c.msgManager.MessageToTransactOpts(ctx, msg)
 }
 
 func (c *Client) SubscribeFilterLogs(ctx context.Context, query ethereum.FilterQuery, ch chan<- types.Log) (ethereum.Subscription, error) {
@@ -664,7 +468,7 @@ func (c *Client) SubscribeNewHead(ctx context.Context, ch chan<- *types.Header) 
 }
 
 func (c *Client) EstimateGas(ctx context.Context, msg ethereum.CallMsg) (uint64, error) {
-	gas, err := c.Client.EstimateGas(ctx, msg)
+	gas, err := c.Manager.EstimateGas(ctx, msg)
 	if err != nil {
 		return 0, c.DecodeJsonRpcError(err)
 	}

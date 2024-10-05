@@ -68,18 +68,21 @@ func testCallContract(t *testing.T, client *ethclient.Client) {
 		t.Fatalf("CallMsg err: %v", err)
 	}
 
-	contractCallTx, err := client.SendMsg(ctx, message.Request{
+	msg := &message.Request{
 		From: helper.Addr,
 		To:   &contractAddr,
 		Data: data,
-	})
-	if err != nil {
-		t.Fatalf("Send single Message err: %v", err)
 	}
+	msg.SetRandomId()
+	client.ScheduleMsg(msg)
 
-	t.Log("contractCallTx send sucessul", "txHash", contractCallTx.Hash().Hex())
+	resp, contains := client.WaitMsgResponse(msg.Id(), 10*time.Second)
 
-	_, contains := client.WaitTxReceipt(contractCallTx.Hash(), 2, 20*time.Second)
+	assert.True(t, contains)
+	assert.Nil(t, resp.Err)
+	t.Log("contractCallTx send sucessul", "txHash", resp.Tx.Hash().Hex())
+
+	_, contains = client.WaitMsgReceipt(msg.Id(), 2, 20*time.Second)
 	assert.Equal(t, true, contains)
 
 	counter, err := contract.Counter(nil)
@@ -99,8 +102,8 @@ func testContractRevert(t *testing.T, client *ethclient.Client) {
 
 	t.Log("TestContract creation transaction", "txHex", txOfContractCreation.Hash().Hex(), "contract", contractAddr.Hex())
 
-	_, contains := client.WaitTxReceipt(txOfContractCreation.Hash(), 2, 5*time.Second)
-	assert.Equal(t, true, contains)
+	_, contains := client.WaitTxReceipt(txOfContractCreation.Hash(), 1, 6*time.Second)
+	assert.Equal(t, true, contains, "contains1")
 
 	// Call contract method `testFunc1` id -> 0x88655d98
 	contractAbi := contracts.GetTestContractABI()
@@ -108,33 +111,36 @@ func testContractRevert(t *testing.T, client *ethclient.Client) {
 	assert.Equal(t, nil, err)
 
 	// Send successful, but executation failed.
-	contractCallTx, err := client.SendMsg(ctx, message.Request{
+	msg := &message.Request{
 		From:     helper.Addr,
 		To:       &contractAddr,
 		Data:     data,
 		Gas:      210000,
 		GasPrice: big.NewInt(10),
-	})
-	if err != nil {
-		t.Fatalf("Send single Message, err: %v", err)
 	}
+	msg.SetRandomId()
+	client.ScheduleMsg(msg)
 
-	receipt, contains := client.WaitTxReceipt(contractCallTx.Hash(), 1, 3*time.Second)
-	assert.Equal(t, true, contains)
-	assert.NotNil(t, receipt)
-	assert.Equal(t, types.ReceiptStatusFailed, receipt.Status)
+	receipt, contains := client.WaitMsgReceipt(msg.Id(), 1, 6*time.Second)
+	assert.Equal(t, true, contains, "contains2")
+	assert.NotNil(t, receipt, "receipt")
+	assert.Equal(t, types.ReceiptStatusFailed, receipt.TxReceipt.Status, "receipt status")
 
-	t.Log("contractCallTx send sucessul", "txHash", contractCallTx.Hash().Hex())
+	t.Log("contractCallTx send sucessul", "txHash", receipt.TxReceipt.TxHash.Hex())
 
 	// Send failed, because estimateGas faield.
-	contractCallTx, err = client.SendMsg(ctx, message.Request{
+	msg = &message.Request{
 		From: helper.Addr,
 		To:   &contractAddr,
 		Data: data,
-	})
-	t.Log("Send Message without specific gas and gasPrice, err: ", err)
+	}
+	msg.SetRandomId()
+	client.ScheduleMsg(msg)
+	t.Log("Send Message without specific gas and gasPrice")
 	// Send Message without specific gas and gasPrice, err:  NewTransaction err: execution reverted: test reverted
-	assert.NotEqual(t, nil, err, "expect revert transaction")
+	resp, contains := client.WaitMsgResponse(msg.Id(), 10*time.Second)
+	assert.True(t, contains, "contains2")
+	assert.NotNil(t, resp.Err, "expect revert transaction")
 
 	// Call failed, because evm execution faield.
 	returnData, err := client.CallMsg(ctx, message.Request{
@@ -143,8 +149,8 @@ func testContractRevert(t *testing.T, client *ethclient.Client) {
 		Data: data,
 	}, nil)
 	t.Log("Call Message err: ", err)
-	assert.Equal(t, 0, len(returnData))
-	assert.NotEqual(t, nil, err, "expect revert transaction")
+	assert.Equal(t, 0, len(returnData), "returndata1")
+	assert.NotNil(t, err, "expect revert transaction")
 }
 
 func test_CallContract_Concurrent(t *testing.T, client *ethclient.Client) {

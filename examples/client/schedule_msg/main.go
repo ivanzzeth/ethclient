@@ -41,7 +41,7 @@ func main() {
 		client.CloseSendMsg()
 	}()
 
-	for resp := range client.ScheduleMsgResponse() {
+	for resp := range client.Response() {
 		fmt.Println("execution resp: ", resp)
 	}
 }

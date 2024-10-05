@@ -65,7 +65,7 @@ func testScheduleMsg(t *testing.T, client *ethclient.Client) {
 			message.AssignMessageId(req)
 
 			t.Logf("ScheduleMsg#%v", i)
-			client.ScheduleMsg(*req)
+			client.ScheduleMsg(req)
 			t.Log("Write MSG to channel")
 		}
 
@@ -74,7 +74,7 @@ func testScheduleMsg(t *testing.T, client *ethclient.Client) {
 		client.Close()
 	}()
 
-	for resp := range client.ScheduleMsgResponse() {
+	for resp := range client.Response() {
 		tx := resp.Tx
 		err := resp.Err
 		var js []byte
@@ -119,7 +119,7 @@ func test_ScheduleMsg_RandomlyReverted(t *testing.T, client *ethclient.Client) {
 				},
 			)
 
-			client.ScheduleMsg(*msg)
+			client.ScheduleMsg(msg)
 			wantErrMap[msg.Id()] = number%4 == 0
 
 			t.Logf("Write MSG to channel, block: %v, blockMod: %v, msgId: %v", number, number%4, msg.Id().Hex())
@@ -130,7 +130,7 @@ func test_ScheduleMsg_RandomlyReverted(t *testing.T, client *ethclient.Client) {
 		client.Close()
 	}()
 
-	for resp := range client.ScheduleMsgResponse() {
+	for resp := range client.Response() {
 		tx := resp.Tx
 		err := resp.Err
 
@@ -168,20 +168,20 @@ func test_ScheduleMsg_RandomlyReverted(t *testing.T, client *ethclient.Client) {
 
 func test_Schedule(t *testing.T, client *ethclient.Client) {
 	go func() {
-		client.ScheduleMsg(*message.AssignMessageId(&message.Request{
+		client.ScheduleMsg(message.AssignMessageId(&message.Request{
 			From:      helper.Addr,
 			To:        &helper.Addr,
 			StartTime: time.Now().Add(5 * time.Second).UnixNano(),
 		}))
 
-		client.ScheduleMsg(*message.AssignMessageId(&message.Request{
+		client.ScheduleMsg(message.AssignMessageId(&message.Request{
 			From: helper.Addr,
 			To:   &helper.Addr,
 			// StartTime:      time.Now().Add(5 * time.Second).UnixNano(),
 			ExpirationTime: time.Now().UnixNano() - int64(5*time.Second),
 		}))
 
-		client.ScheduleMsg(*message.AssignMessageId(&message.Request{
+		client.ScheduleMsg(message.AssignMessageId(&message.Request{
 			From:           helper.Addr,
 			To:             &helper.Addr,
 			ExpirationTime: time.Now().Add(10 * time.Second).UnixNano(),
@@ -192,7 +192,7 @@ func test_Schedule(t *testing.T, client *ethclient.Client) {
 		client.CloseSendMsg()
 	}()
 
-	for resp := range client.ScheduleMsgResponse() {
-		t.Log("execution resp: ", resp)
-	}
+	// for resp := range client.Response() {
+	// 	t.Log("execution resp: ", resp)
+	// }
 }

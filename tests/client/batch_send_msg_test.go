@@ -6,13 +6,13 @@ import (
 	"github.com/ivanzzeth/ethclient/tests/helper"
 )
 
-func TestBatchSendMsg(t *testing.T) {
+func TestScheduleMsg(t *testing.T) {
 	client := helper.SetUpClient(t)
 
 	testScheduleMsg(t, client)
 }
 
-func Test_BatchSendMsg_RandomlyReverted(t *testing.T) {
+func Test_ScheduleMsg_RandomlyReverted(t *testing.T) {
 	client := helper.SetUpClient(t)
 
 	test_ScheduleMsg_RandomlyReverted(t, client)
