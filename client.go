@@ -47,9 +47,9 @@ var _ ethereum.ChainIDReader = (*Client)(nil)
 
 type Client struct {
 	*ethclient.Client
-	rpcClient   *rpc.Client
-	accRegistry account.Registry
-	nonce.Manager
+	rpcClient       *rpc.Client
+	accRegistry     account.Registry
+	nonceManager    nonce.Manager
 	msgManager      message.Manager
 	broadcaster     message.Broadcaster
 	reqChannel      chan message.Request
@@ -118,7 +118,7 @@ func NewClient(
 		msgBuffer:       consts.DefaultMsgBuffer,
 		msgStore:        msgStore,
 		msgSequencer:    sequencer,
-		Manager:         nonceManager,
+		nonceManager:    nonceManager,
 		msgManager:      msgManager,
 		broadcaster:     message.NewSimpleBroadcaster(msgManager),
 		Subscriber:      subscriber,
@@ -156,7 +156,7 @@ func (c *Client) RawClient() *ethclient.Client {
 }
 
 func (c *Client) SetNonceManager(nm nonce.Manager) {
-	c.Manager = nm
+	c.nonceManager = nm
 }
 
 func (c *Client) SetSubscriber(s subscriber.Subscriber) {
@@ -430,11 +430,11 @@ func (c *Client) broadcast(ctx context.Context) {
 }
 
 func (c *Client) PendingNonceAt(ctx context.Context, account common.Address) (uint64, error) {
-	return c.Manager.PendingNonceAt(ctx, account)
+	return c.nonceManager.PendingNonceAt(ctx, account)
 }
 
 func (c *Client) SuggestGasPrice(ctx context.Context) (gasPrice *big.Int, err error) {
-	return c.Manager.SuggestGasPrice(ctx)
+	return c.nonceManager.SuggestGasPrice(ctx)
 }
 
 func (c *Client) WaitTxReceipt(txHash common.Hash, confirmations uint64, timeout time.Duration) (*types.Receipt, bool) {
@@ -467,8 +467,13 @@ func (c *Client) SubscribeNewHead(ctx context.Context, ch chan<- *types.Header) 
 	return c.Subscriber.SubscribeNewHead(ctx, ch)
 }
 
+// TODO:
+// func (c *Client) SubscribePendingTransactions(ctx context.Context, ch chan<- *types.Transaction) (ethereum.Subscription, error) {
+// return c.Client
+// }
+
 func (c *Client) EstimateGas(ctx context.Context, msg ethereum.CallMsg) (uint64, error) {
-	gas, err := c.Manager.EstimateGas(ctx, msg)
+	gas, err := c.nonceManager.EstimateGas(ctx, msg)
 	if err != nil {
 		return 0, c.DecodeJsonRpcError(err)
 	}
