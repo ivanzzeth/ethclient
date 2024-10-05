@@ -23,6 +23,7 @@ import (
 	"github.com/ivanzzeth/ethclient/subscriber"
 )
 
+// Implements Ethereum interfaces
 var _ bind.ContractBackend = (*Client)(nil)
 var _ bind.PendingContractCaller = (*Client)(nil)
 var _ bind.DeployBackend = (*Client)(nil)
@@ -45,21 +46,27 @@ var _ ethereum.GasEstimator = (*Client)(nil)
 var _ ethereum.BlockNumberReader = (*Client)(nil)
 var _ ethereum.ChainIDReader = (*Client)(nil)
 
+// Implements interfaces
+var _ message.StorageReader = (*Client)(nil)
+
 type Client struct {
 	*ethclient.Client
-	rpcClient       *rpc.Client
-	accRegistry     account.Registry
-	nonceManager    nonce.Manager
-	msgManager      message.Manager
-	broadcaster     message.Broadcaster
+	rpcClient *rpc.Client
+
+	msgBuffer int
+	abi       abi.ABI
+
 	reqChannel      chan message.Request
 	scheduleChannel chan message.Request
 	respChannel     chan message.Response
 	receiptChannel  chan message.Receipt
-	msgBuffer       int
-	msgStore        message.Storage
-	msgSequencer    message.Sequencer
-	abi             abi.ABI
+
+	accRegistry  account.Registry
+	msgStore     message.Storage
+	nonceManager nonce.Manager
+	msgManager   message.Manager
+	msgSequencer message.Sequencer
+	broadcaster  message.Broadcaster
 
 	subscriber.Subscriber
 }
@@ -178,10 +185,6 @@ func (c *Client) RegisterPrivateKey(ctx context.Context, key *ecdsa.PrivateKey) 
 
 func (c *Client) SetMsgBuffer(buffer int) {
 	c.msgBuffer = buffer
-}
-
-func (c *Client) GetMsg(msgId common.Hash) (message.Message, error) {
-	return c.msgStore.GetMsg(msgId)
 }
 
 func (c *Client) NewMethodData(a abi.ABI, methodName string, args ...interface{}) ([]byte, error) {
@@ -506,6 +509,18 @@ func (c *Client) PendingCallContract(ctx context.Context, msg ethereum.CallMsg) 
 	}
 
 	return ret, nil
+}
+
+func (c *Client) HasMsg(msgId common.Hash) bool {
+	return c.msgStore.HasMsg(msgId)
+}
+
+func (c *Client) GetMsg(msgId common.Hash) (message.Message, error) {
+	return c.msgStore.GetMsg(msgId)
+}
+
+func (c *Client) GetNonce(msgId common.Hash) (uint64, error) {
+	return c.msgStore.GetNonce(msgId)
 }
 
 func (c *Client) DebugTransactionOnChain(ctx context.Context, txHash common.Hash) ([]byte, error) {
