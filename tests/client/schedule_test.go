@@ -53,7 +53,7 @@ func Test_ScheduleMsg_RandomlyReverted_WithRedis(t *testing.T) {
 }
 
 func testScheduleMsg(t *testing.T, client *ethclient.Client) {
-	buffer := 10
+	buffer := 10000
 	go func() {
 		for i := 0; i < 2*buffer; i++ {
 			to := common.HexToAddress("0x06514D014e997bcd4A9381bF0C4Dc21bD32718D4")
@@ -69,7 +69,7 @@ func testScheduleMsg(t *testing.T, client *ethclient.Client) {
 			t.Log("Write MSG to channel")
 		}
 
-		time.Sleep(5 * time.Second)
+		time.Sleep(10 * time.Second)
 		t.Log("Close client")
 		client.Close()
 	}()
