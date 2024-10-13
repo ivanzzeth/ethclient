@@ -31,7 +31,7 @@ import (
 	"github.com/ivanzzeth/ethclient"
 	"github.com/ivanzzeth/ethclient/contracts"
 	"github.com/ivanzzeth/ethclient/message"
-	"github.com/stretchr/testify/assert"
+	"github.com/ivanzzeth/ethclient/simulated"
 )
 
 var (
@@ -39,14 +39,32 @@ var (
 	Addr          = crypto.PubkeyToAddress(PrivateKey.PublicKey)
 )
 
-func SetUpClient(t *testing.T) *ethclient.Client {
-	handler := log.NewTerminalHandler(os.Stdout, true)
+func SetUpClient(t *testing.T) (sim *simulated.Backend) {
+	// For more details about logs
+	handler := log.NewTerminalHandlerWithLevel(os.Stdout, log.LevelDebug, true)
 	logger := log.NewLogger(handler)
 	log.SetDefault(logger)
 
-	client, err := ethclient.Dial("http://localhost:8545")
+	alloc := types.GenesisAlloc{
+		Addr: types.Account{
+			Balance: big.NewInt(0).Mul(big.NewInt(100000000), big.NewInt(1000000000000000000)),
+		},
+	}
+	sim = simulated.NewBackend(alloc)
+
+	client := sim.Client()
+	// client, err := ethclient.Dial("http://localhost:8545")
+	// if err != nil {
+	// 	t.Fatal(err)
+	// }
+
+	latestBlock, err := client.BlockNumber(context.Background())
 	if err != nil {
 		t.Fatal(err)
+	}
+
+	if latestBlock != 0 {
+		panic(fmt.Errorf("unexpected block number: %v", latestBlock))
 	}
 
 	err = client.RegisterPrivateKey(context.Background(), PrivateKey)
@@ -56,24 +74,29 @@ func SetUpClient(t *testing.T) *ethclient.Client {
 
 	client.AddABI(contracts.GetTestContractABI())
 
-	return client
+	t.Logf("Setup Client successful")
+	return
 }
 
-func DeployTestContract(t *testing.T, ctx context.Context, client *ethclient.Client) (common.Address, *types.Transaction, *contracts.Contracts) {
-	auth, err := client.MessageToTransactOpts(ctx, message.Request{From: Addr})
+func DeployTestContract(t *testing.T, ctx context.Context, backend *simulated.Backend) (common.Address, *types.Transaction, *contracts.Contracts) {
+	auth, err := backend.Client().MessageToTransactOpts(ctx, message.Request{From: Addr})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	contractAddr, txOfContractCreation, contract, err := contracts.DeployContracts(auth, client)
+	contractAddr, txOfContractCreation, contract, err := contracts.DeployContracts(auth, backend.Client())
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	t.Log("TestContract creation transaction", "txHex", txOfContractCreation.Hash().Hex(), "contract", contractAddr.Hex())
 
-	_, contains := client.WaitTxReceipt(txOfContractCreation.Hash(), 1, 5*time.Second)
-	assert.Equal(t, true, contains)
+	backend.CommitAndExpectTx(txOfContractCreation.Hash())
+
+	_, contains := backend.Client().WaitTxReceipt(txOfContractCreation.Hash(), 0, 5*time.Second)
+	if !contains {
+		t.Fatal("deploy contract failed")
+	}
 
 	return contractAddr, txOfContractCreation, contract
 }
@@ -96,10 +119,7 @@ func NewTestClient(t *testing.T) *ethclient.Client {
 		panic("newTestClient attach failed")
 	}
 
-	client, err := ethclient.NewMemoryClient(rpcClient)
-	if err != nil {
-		t.Fatal(err)
-	}
+	client := ethclient.NewClient(rpcClient)
 
 	return client
 }

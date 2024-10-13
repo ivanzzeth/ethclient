@@ -20,6 +20,10 @@ func NewMemoryStorage() (*MemoryStorage, error) {
 
 func (s *MemoryStorage) AddMsg(req Request) error {
 	log.Debug("MemoryStorage AddMsg", "req", req)
+	if s.HasMsg(req.id) {
+		return fmt.Errorf("duplicated msg not allowed")
+	}
+
 	s.store.Store(req.id, Message{
 		Req:    &req,
 		Status: MessageStatusSubmitted,
@@ -64,7 +68,8 @@ func (s *MemoryStorage) UpdateResponse(msgId common.Hash, resp Response) error {
 }
 
 func (s *MemoryStorage) UpdateReceipt(msgId common.Hash, receipt Receipt) error {
-	log.Debug("MemoryStorage UpdateReceipt", "msgId", msgId.Hex(), "receipt", receipt)
+	log.Debug("MemoryStorage UpdateReceipt", "msgId", msgId.Hex(),
+		"txHash", receipt.TxReceipt.TxHash.Hex(), "receipt", receipt)
 
 	msg, err := s.GetMsg(msgId)
 	if err != nil {

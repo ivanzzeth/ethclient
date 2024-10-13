@@ -14,6 +14,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/ethereum/go-ethereum/ethclient/gethclient"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/ivanzzeth/ethclient/account"
@@ -51,6 +52,7 @@ var _ message.StorageReader = (*Client)(nil)
 
 type Client struct {
 	*ethclient.Client
+	*gethClient
 	rpcClient *rpc.Client
 
 	msgBuffer int
@@ -71,24 +73,28 @@ type Client struct {
 	subscriber.Subscriber
 }
 
-func NewMemoryClient(c *rpc.Client) (*Client, error) {
+type gethClient struct {
+	*gethclient.Client
+}
+
+func NewClient(c *rpc.Client) *Client {
 	ethc := ethclient.NewClient(c)
 
 	chainId, err := ethc.ChainID(context.Background())
 	if err != nil {
-		return nil, err
+		panic(err)
 	}
 
 	accRegistry := account.NewSimpleRegistry(chainId)
 
 	nm, err := nonce.NewSimpleManager(ethc, nonce.NewMemoryStorage())
 	if err != nil {
-		return nil, err
+		panic(err)
 	}
 
 	msgStore, err := message.NewMemoryStorage()
 	if err != nil {
-		return nil, err
+		panic(err)
 	}
 
 	msgSequencer := message.NewMemorySequencer(ethc, msgStore, consts.DefaultMsgBuffer)
@@ -97,13 +103,18 @@ func NewMemoryClient(c *rpc.Client) (*Client, error) {
 
 	subscriber, err := subscriber.NewChainSubscriber(ethc, subscriber.NewMemoryStorage(chainId))
 	if err != nil {
-		return nil, err
+		panic(err)
 	}
 
-	return NewClient(c, accRegistry, msgStore, nm, msgManager, subscriber, msgSequencer)
+	client, err := NewEthClient(c, accRegistry, msgStore, nm, msgManager, subscriber, msgSequencer)
+	if err != nil {
+		panic(err)
+	}
+
+	return client
 }
 
-func NewClient(
+func NewEthClient(
 	c *rpc.Client,
 	accRegistry account.Registry,
 	msgStore message.Storage,
@@ -116,6 +127,7 @@ func NewClient(
 
 	cli := &Client{
 		Client:          ethc,
+		gethClient:      &gethClient{Client: gethclient.New(c)},
 		rpcClient:       c,
 		accRegistry:     accRegistry,
 		reqChannel:      make(chan message.Request, consts.DefaultMsgBuffer),
@@ -192,6 +204,7 @@ func (c *Client) NewMethodData(a abi.ABI, methodName string, args ...interface{}
 }
 
 func (c *Client) ScheduleMsg(req *message.Request) {
+	log.Info("schedule message", "msgId", req.Id().Hex())
 	c.reqChannel <- *req.Copy()
 }
 
@@ -470,11 +483,6 @@ func (c *Client) SubscribeNewHead(ctx context.Context, ch chan<- *types.Header) 
 	return c.Subscriber.SubscribeNewHead(ctx, ch)
 }
 
-// TODO:
-// func (c *Client) SubscribePendingTransactions(ctx context.Context, ch chan<- *types.Transaction) (ethereum.Subscription, error) {
-// return c.Client
-// }
-
 func (c *Client) EstimateGas(ctx context.Context, msg ethereum.CallMsg) (uint64, error) {
 	gas, err := c.nonceManager.EstimateGas(ctx, msg)
 	if err != nil {
@@ -486,6 +494,15 @@ func (c *Client) EstimateGas(ctx context.Context, msg ethereum.CallMsg) (uint64,
 
 func (c *Client) CallContract(ctx context.Context, msg ethereum.CallMsg, blockNumber *big.Int) ([]byte, error) {
 	ret, err := c.Client.CallContract(ctx, msg, blockNumber)
+	if err != nil {
+		return nil, c.DecodeJsonRpcError(err)
+	}
+
+	return ret, nil
+}
+
+func (c *Client) CallContractWithAccountOverride(ctx context.Context, msg ethereum.CallMsg, blockNumber *big.Int, overrides *map[common.Address]gethclient.OverrideAccount) ([]byte, error) {
+	ret, err := c.gethClient.CallContract(ctx, msg, blockNumber, overrides)
 	if err != nil {
 		return nil, c.DecodeJsonRpcError(err)
 	}

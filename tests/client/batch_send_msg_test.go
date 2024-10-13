@@ -7,13 +7,13 @@ import (
 )
 
 func TestScheduleMsg(t *testing.T) {
-	client := helper.SetUpClient(t)
+	sim := helper.SetUpClient(t)
 
-	testScheduleMsg(t, client)
+	testScheduleMsg(t, sim)
 }
 
 func Test_ScheduleMsg_RandomlyReverted(t *testing.T) {
-	client := helper.SetUpClient(t)
+	sim := helper.SetUpClient(t)
 
-	test_ScheduleMsg_RandomlyReverted(t, client)
+	test_ScheduleMsg_RandomlyReverted(t, sim)
 }

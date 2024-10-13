@@ -263,8 +263,13 @@ func (cs *ChainSubscriber) FilterLogsWithChannel(ctx context.Context, q ethereum
 			}
 
 			if watch {
-				log.Debug("FilterLogsWithChannel decreases lastBlock for confirmations", "queryHash", query.Hash(), "lastBlock", lastBlock, "after", lastBlock-cs.blockConfirmationsOnSubscription)
-				lastBlock -= cs.blockConfirmationsOnSubscription
+				if lastBlock >= cs.blockConfirmationsOnSubscription {
+					log.Info("filtering logs decreases lastBlock for confirmations", "queryHash", query.Hash(), "lastBlock", lastBlock, "after", lastBlock-cs.blockConfirmationsOnSubscription)
+					lastBlock -= cs.blockConfirmationsOnSubscription
+				} else {
+					time.Sleep(cs.retryInterval)
+					continue
+				}
 			}
 
 			if startBlock > toBlock || (watch && startBlock > lastBlock) {
@@ -296,7 +301,7 @@ func (cs *ChainSubscriber) FilterLogsWithChannel(ctx context.Context, q ethereum
 					endBlock = lastBlock
 				}
 
-				log.Info("start filtering logs", "queryHash", query.Hash(), "from", startBlock, "to", endBlock)
+				log.Info("start filtering logs", "queryHash", query.Hash(), "from", startBlock, "to", endBlock, "latest", lastBlock)
 
 				filterQuery := ethereum.FilterQuery{
 					BlockHash: nil,

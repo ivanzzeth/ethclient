@@ -10,26 +10,27 @@ import (
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ivanzzeth/ethclient"
 	"github.com/ivanzzeth/ethclient/contracts"
 	"github.com/ivanzzeth/ethclient/message"
+	"github.com/ivanzzeth/ethclient/simulated"
 	"github.com/ivanzzeth/ethclient/tests/helper"
 	"github.com/stretchr/testify/assert"
 )
 
 func Test_Sequencer_Concurrent(t *testing.T) {
-	client := helper.SetUpClient(t)
-	defer client.Close()
+	sim := helper.SetUpClient(t)
+	defer sim.Close()
 
-	test_Sequencer_Concurrent(t, client)
+	test_Sequencer_Concurrent(t, sim)
 }
 
-func test_Sequencer_Concurrent(t *testing.T, client *ethclient.Client) {
+func test_Sequencer_Concurrent(t *testing.T, sim *simulated.Backend) {
+	client := sim.Client()
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
 	defer cancel()
 
 	// Deploy Test contract.
-	contractAddr, _, contract := helper.DeployTestContract(t, ctx, client)
+	contractAddr, _, contract := helper.DeployTestContract(t, ctx, sim)
 
 	// Call contract method `testFunc1` id -> 0x88655d98
 	contractAbi := contracts.GetTestContractABI()
@@ -73,9 +74,11 @@ func test_Sequencer_Concurrent(t *testing.T, client *ethclient.Client) {
 		// client.CloseSendMsg()
 	}()
 
-	// for resp := range client.Response() {
-	// 	t.Logf("resp: %+v", resp)
-	// }
+	go func() {
+		for range client.Response() {
+			sim.Commit()
+		}
+	}()
 
 	time.Sleep(5 * time.Second)
 

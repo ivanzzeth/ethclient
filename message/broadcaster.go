@@ -23,8 +23,8 @@ type SimpleBroadcaster struct {
 func NewSimpleBroadcaster(msgManager Manager) *SimpleBroadcaster {
 	return &SimpleBroadcaster{
 		msgManager:         msgManager,
-		blockConfirmations: 1, // TODO:
-		timeout:            10 * time.Second,
+		blockConfirmations: 0, // TODO:
+		timeout:            20 * time.Second,
 	}
 }
 
@@ -49,11 +49,11 @@ func (b SimpleBroadcaster) protect(ctx context.Context, msgId common.Hash) {
 		return
 	}
 
-	log.Debug("protect msg", "msgId", msgId, "resp", *resp)
-
 	if resp.Err != nil {
 		return
 	}
+
+	log.Info("protect msg", "msgId", msgId.Hex(), "txHash", resp.Tx.Hash().Hex(), "resp", *resp)
 
 	txReceipt, ok := b.msgManager.WaitTxReceipt(resp.Tx.Hash(), b.blockConfirmations, b.timeout)
 	if !ok {

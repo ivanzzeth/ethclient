@@ -7,6 +7,7 @@ import (
 
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/log"
 )
 
 var _ Manager = &SimpleManager{}
@@ -63,6 +64,8 @@ func (nm *SimpleManager) PendingNonceAt(ctx context.Context, account common.Addr
 			return 0, err
 		}
 	}
+
+	log.Info("pending nonce at", "account", account.Hex(), "nonce", nonce, "nonceInLatest", nonceInLatest)
 
 	err = nm.SetNonce(account, nonce+1)
 	if err != nil {

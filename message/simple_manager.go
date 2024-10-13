@@ -92,6 +92,7 @@ func (m SimpleManager) SendMsg(ctx context.Context, msg Request) (resp Response)
 }
 
 func (m SimpleManager) ReplaceMsgWithHigherGasPrice(ctx context.Context, msgId common.Hash) (resp Response) {
+	log.Info("replace message with higher gas price", "msgId", msgId)
 	resp.Id = msgId
 
 	signedTx, err := m.replaceMsgWithHigherGasPrice(ctx, msgId)
@@ -137,7 +138,9 @@ func (c SimpleManager) MessageToTransactOpts(ctx context.Context, msg Request) (
 
 func (c SimpleManager) WaitTxReceipt(txHash common.Hash, confirmations uint64, timeout time.Duration) (*types.Receipt, bool) {
 	startTime := time.Now()
-	for {
+	retryCount := 0
+	for ; ; retryCount++ {
+		log.Debug("wait tx receipt", "txHash", txHash.Hex(), "retryCount", retryCount)
 		currTime := time.Now()
 		elapsedTime := currTime.Sub(startTime)
 		if elapsedTime >= timeout {
@@ -145,12 +148,15 @@ func (c SimpleManager) WaitTxReceipt(txHash common.Hash, confirmations uint64, t
 		}
 
 		receipt, err := c.backend.TransactionReceipt(context.Background(), txHash)
+		// log.Debug("WaitTxReceipt.TransactionReceipt", "receipt", receipt, "err", err)
 		if err != nil {
 			time.Sleep(1 * time.Second)
 			continue
 		}
 
 		block, err := c.backend.BlockNumber(context.Background())
+		// log.Debug("WaitTxReceipt.BlockNumber", "block", block, "err", err)
+
 		if err != nil {
 			time.Sleep(1 * time.Second)
 			continue
@@ -159,12 +165,15 @@ func (c SimpleManager) WaitTxReceipt(txHash common.Hash, confirmations uint64, t
 		if block >= receipt.BlockNumber.Uint64()+confirmations {
 			return receipt, true
 		}
+
+		time.Sleep(1 * time.Second)
 	}
 }
 
 func (c SimpleManager) WaitMsgResponse(msgId common.Hash, timeout time.Duration) (*Response, bool) {
 	startTime := time.Now()
 	for {
+		log.Debug("wait msg response", "msgId", msgId.Hex())
 		currTime := time.Now()
 		elapsedTime := currTime.Sub(startTime)
 		if elapsedTime >= timeout {
@@ -173,13 +182,13 @@ func (c SimpleManager) WaitMsgResponse(msgId common.Hash, timeout time.Duration)
 
 		msg, err := c.GetMsg(msgId)
 		if err != nil {
-			log.Debug("WaitMsgResponse GetMsg failed", "err", err)
+			// log.Debug("WaitMsgResponse GetMsg failed", "err", err)
 			time.Sleep(1 * time.Second)
 			continue
 		}
 
 		if msg.Resp == nil {
-			log.Debug("WaitMsgResponse msg.Resp is nil")
+			// log.Debug("WaitMsgResponse msg.Resp is nil")
 			time.Sleep(1 * time.Second)
 			continue
 		}
@@ -203,6 +212,10 @@ func (c SimpleManager) WaitMsgReceipt(msgId common.Hash, confirmations uint64, t
 			continue
 		}
 
+		if msg.Resp != nil && msg.Resp.Tx != nil {
+			log.Debug("wait msg receipt", "msgId", msgId.Hex(), "txHash", msg.Resp.Tx.Hash().Hex())
+		}
+
 		if msg.Receipt == nil {
 			time.Sleep(1 * time.Second)
 			continue
@@ -223,6 +236,8 @@ func (c SimpleManager) WaitMsgReceipt(msgId common.Hash, confirmations uint64, t
 		if block >= receipt.BlockNumber.Uint64()+confirmations {
 			return msg.Receipt, true
 		}
+
+		time.Sleep(1 * time.Second)
 	}
 }
 
@@ -261,7 +276,7 @@ func (m SimpleManager) sendMsg(ctx context.Context, msg Request) (signedTx *type
 		return nil, err
 	}
 
-	log.Debug("Send Message successfully", "txHash", signedTx.Hash().Hex(), "from", msg.From.Hex(),
+	log.Info("Send Message successfully", "msgId", msg.Id(), "txHash", signedTx.Hash().Hex(), "from", msg.From.Hex(),
 		"to", msg.To.Hex(), "value", msg.Value)
 
 	return signedTx, nil
@@ -297,7 +312,7 @@ func (m SimpleManager) replaceMsgWithHigherGasPrice(ctx context.Context, msgId c
 		return nil, err
 	}
 
-	log.Debug("Send Message successfully", "txHash", signedTx.Hash().Hex(), "from", msg.Req.From.Hex(),
+	log.Info("Replace and send Message successfully", "msgId", msgId, "txHash", signedTx.Hash().Hex(), "from", msg.Req.From.Hex(),
 		"to", msg.Req.To.Hex(), "value", msg.Req.Value)
 
 	return signedTx, nil
@@ -324,6 +339,7 @@ func (m SimpleManager) signMsgAndBroadcast(ctx context.Context, msgId common.Has
 	if err != nil {
 		return nil, fmt.Errorf("SendTransaction err: %v", err)
 	}
+	log.Info("broadcasted transaction", "txHash", signedTx.Hash().Hex(), "from", from, "nonce", tx.Nonce())
 
 	err = m.UpdateMsgStatus(msgId, MessageStatusInflight)
 	if err != nil {
