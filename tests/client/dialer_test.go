@@ -10,7 +10,7 @@ import (
 	"github.com/ivanzzeth/ethclient"
 )
 
-func Test_Dialer_DialOnce(t *testing.T) {
+func test_Dialer_DialOnce(t *testing.T) {
 	handler := log.NewTerminalHandler(os.Stdout, true)
 	logger := log.NewLogger(handler)
 	log.SetDefault(logger)

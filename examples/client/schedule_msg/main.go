@@ -17,31 +17,31 @@ func main() {
 	defer client.Close()
 
 	go func() {
-		client.ScheduleMsg(*message.AssignMessageId(&message.Request{
+		client.ScheduleMsg((&message.Request{
 			From:      helper.Addr,
 			To:        &helper.Addr,
 			StartTime: time.Now().Add(5 * time.Second).UnixNano(),
-		}))
+		}).SetRandomId())
 
-		client.ScheduleMsg(*message.AssignMessageId(&message.Request{
+		client.ScheduleMsg((&message.Request{
 			From: helper.Addr,
 			To:   &helper.Addr,
 			// StartTime:      time.Now().Add(5 * time.Second).UnixNano(),
 			ExpirationTime: time.Now().UnixNano() - int64(5*time.Second),
-		}))
+		}).SetRandomId())
 
-		client.ScheduleMsg(*message.AssignMessageId(&message.Request{
+		client.ScheduleMsg((&message.Request{
 			From:           helper.Addr,
 			To:             &helper.Addr,
 			ExpirationTime: time.Now().Add(10 * time.Second).UnixNano(),
 			Interval:       2 * time.Second,
-		}))
+		}).SetRandomId())
 
 		time.Sleep(20 * time.Second)
 		client.CloseSendMsg()
 	}()
 
-	for resp := range client.ScheduleMsgResponse() {
+	for resp := range client.Response() {
 		fmt.Println("execution resp: ", resp)
 	}
 }
