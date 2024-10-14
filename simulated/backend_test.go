@@ -21,14 +21,12 @@ import (
 	"crypto/ecdsa"
 	"math/big"
 	"math/rand"
-	"os"
 	"testing"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 )
 
@@ -39,9 +37,9 @@ var (
 
 func init() {
 	// For more details about logs
-	handler := log.NewTerminalHandlerWithLevel(os.Stdout, log.LevelDebug, true)
-	logger := log.NewLogger(handler)
-	log.SetDefault(logger)
+	// handler := log.NewTerminalHandlerWithLevel(os.Stdout, log.LevelDebug, true)
+	// logger := log.NewLogger(handler)
+	// log.SetDefault(logger)
 }
 
 func simTestBackend(testAddr common.Address) *Backend {
@@ -112,7 +110,7 @@ func TestAdjustTime(t *testing.T) {
 	block2, _ := client.BlockByNumber(context.Background(), nil)
 	prevTime := block1.Time()
 	newTime := block2.Time()
-	if newTime-prevTime != uint64(time.Minute) {
+	if newTime-prevTime != 60 {
 		t.Errorf("adjusted time not equal to 60 seconds. prev: %v, new: %v", prevTime, newTime)
 	}
 }

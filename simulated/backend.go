@@ -169,9 +169,12 @@ func newWithNode(stack *node.Node, conf *eth.Config, blockPeriod uint64) (*Backe
 	filterSystem := filters.NewFilterSystem(backend.APIBackend, filters.Config{})
 	stack.RegisterAPIs([]rpc.API{{
 		Namespace: "eth",
-		Service:   filters.NewFilterAPI(filterSystem, false),
+		Service:   filters.NewFilterAPI(filterSystem),
 	}})
-
+	// Start the node
+	if err := stack.Start(); err != nil {
+		return nil, err
+	}
 	// Set up the simulated beacon
 	beacon, err := catalyst.NewSimulatedBeacon(blockPeriod, backend)
 	if err != nil {
@@ -181,14 +184,6 @@ func newWithNode(stack *node.Node, conf *eth.Config, blockPeriod uint64) (*Backe
 	if err := beacon.Fork(backend.BlockChain().GetCanonicalHash(0)); err != nil {
 		return nil, err
 	}
-
-	// catalyst.RegisterSimulatedBeaconAPIs(stack, beacon)
-
-	// Start the node
-	if err := stack.Start(); err != nil {
-		return nil, err
-	}
-
 	return &Backend{
 		node:   stack,
 		beacon: beacon,
