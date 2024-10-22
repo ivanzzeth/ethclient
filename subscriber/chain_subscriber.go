@@ -256,7 +256,8 @@ func (cs *ChainSubscriber) FilterLogsWithChannel(ctx context.Context, q ethereum
 	endBlock := startBlock + cs.currBlocksPerScan
 
 	query := NewQuery(cs.chainId, q)
-	log.Debug("FilterLogsWithChannel starts", "queryHash", query.Hash(), "currBlocksPerScan", cs.currBlocksPerScan,
+	log.Debug("FilterLogsWithChannel starts", "queryHash", query.Hash(),
+		"blocksPerScan", cs.blocksPerScan, "currBlocksPerScan", cs.currBlocksPerScan,
 		"from", fromBlock, "to", toBlock, "startBlock", startBlock, "endBlock", endBlock)
 
 	go func() {
@@ -314,7 +315,8 @@ func (cs *ChainSubscriber) FilterLogsWithChannel(ctx context.Context, q ethereum
 					endBlock = lastBlock
 				}
 
-				log.Info("start filtering logs", "queryHash", query.Hash(), "currBlocksPerScan", cs.currBlocksPerScan,
+				log.Info("start filtering logs", "queryHash", query.Hash(),
+					"currBlocksPerScan", cs.currBlocksPerScan, "blocksPerScan", cs.blocksPerScan,
 					"from", startBlock, "to", endBlock, "latest", lastBlock)
 
 				filterQuery := ethereum.FilterQuery{
