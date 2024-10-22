@@ -191,6 +191,10 @@ func (cs *ChainSubscriber) FilterLogs(ctx context.Context, q ethereum.FilterQuer
 	return
 }
 
+// TODO:
+// 1. reduce eth_blockNumber calls
+// 2. cache eth_chainId
+// 3. cache all of finalized historical data, e.g., blockByHash, txByHash
 func (cs *ChainSubscriber) FilterLogsWithChannel(ctx context.Context, q ethereum.FilterQuery, logsChan chan<- types.Log, watch bool, closeOnExit bool) (err error) {
 	if q.BlockHash != nil {
 		logs, err := cs.c.FilterLogs(ctx, q)
@@ -316,6 +320,21 @@ func (cs *ChainSubscriber) FilterLogsWithChannel(ctx context.Context, q ethereum
 					lgs, err = cs.storage.FilterLogs(ctx, filterQuery)
 				} else {
 					lgs, err = cs.c.FilterLogs(ctx, filterQuery)
+
+					/*
+						If a query returns too many results or exceeds the max query duration,
+						the following error is returned like below:
+						{
+							"jsonrpc": "2.0",
+							"id": 1,
+							"error": {
+								"code": -32005,
+								"message": "query returned more than 10000 results"
+							}
+						}
+
+						So, we can adjust block range or reduce count of addresses being monitored.
+					*/
 					if err == nil {
 						saveFilterLogsErr := cs.storage.SaveFilterLogs(filterQuery, lgs)
 						if saveFilterLogsErr != nil {
@@ -372,6 +391,7 @@ func (cs *ChainSubscriber) FilterLogsWithChannel(ctx context.Context, q ethereum
 					}
 				}
 
+				// TODO: fix SaveLatestBlockForQuery not called when there's no logs.
 				if useStorage && queryStateWriter != nil {
 					log.Debug("SaveLatestBlockForQuery", "queryHash", query.Hash(), "query", q, "block", endBlock)
 					err = queryStateWriter.SaveLatestBlockForQuery(ctx, q, endBlock)
