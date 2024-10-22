@@ -347,6 +347,9 @@ func (cs *ChainSubscriber) FilterLogsWithChannel(ctx context.Context, q ethereum
 					*/
 					if err == nil {
 						cs.currBlocksPerScan *= 2
+						if cs.currBlocksPerScan > consts.MaxBlocksPerScan {
+							cs.currBlocksPerScan = consts.MaxBlocksPerScan
+						}
 						saveFilterLogsErr := cs.storage.SaveFilterLogs(filterQuery, lgs)
 						if saveFilterLogsErr != nil {
 							log.Error("save filter logs failed", "err", saveFilterLogsErr, "query", query)
