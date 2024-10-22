@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum"
+	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
@@ -26,6 +27,7 @@ type ChainSubscriber struct {
 	retryInterval                    time.Duration
 	buffer                           int
 	blocksPerScan                    uint64
+	currBlocksPerScan                uint64 // adjust dynamiclly
 	blockConfirmationsOnSubscription uint64
 	storage                          SubscriberStorage
 	queryHandler                     QueryHandler
@@ -41,12 +43,13 @@ func NewChainSubscriber(c *ethclient.Client, storage SubscriberStorage) (*ChainS
 	}
 
 	subscriber := &ChainSubscriber{
-		c:             c,
-		chainId:       chainId,
-		buffer:        consts.DefaultMsgBuffer,
-		blocksPerScan: consts.DefaultBlocksPerScan,
-		retryInterval: consts.RetryInterval,
-		storage:       storage,
+		c:                 c,
+		chainId:           chainId,
+		buffer:            consts.DefaultMsgBuffer,
+		blocksPerScan:     consts.DefaultBlocksPerScan,
+		currBlocksPerScan: consts.DefaultBlocksPerScan,
+		retryInterval:     consts.RetryInterval,
+		storage:           storage,
 	}
 
 	return subscriber, nil
@@ -250,10 +253,11 @@ func (cs *ChainSubscriber) FilterLogsWithChannel(ctx context.Context, q ethereum
 		}
 	}
 
-	endBlock := startBlock + cs.blocksPerScan
+	endBlock := startBlock + cs.currBlocksPerScan
 
 	query := NewQuery(cs.chainId, q)
-	log.Debug("FilterLogsWithChannel starts", "queryHash", query.Hash(), "from", fromBlock, "to", toBlock, "startBlock", startBlock, "endBlock", endBlock)
+	log.Debug("FilterLogsWithChannel starts", "queryHash", query.Hash(), "currBlocksPerScan", cs.currBlocksPerScan,
+		"from", fromBlock, "to", toBlock, "startBlock", startBlock, "endBlock", endBlock)
 
 	go func() {
 	Scan:
@@ -268,7 +272,8 @@ func (cs *ChainSubscriber) FilterLogsWithChannel(ctx context.Context, q ethereum
 
 			if watch {
 				if lastBlock >= cs.blockConfirmationsOnSubscription {
-					log.Info("filtering logs decreases lastBlock for confirmations", "queryHash", query.Hash(), "lastBlock", lastBlock, "after", lastBlock-cs.blockConfirmationsOnSubscription)
+					log.Info("filtering logs decreases lastBlock for confirmations", "queryHash", query.Hash(),
+						"lastBlock", lastBlock, "after", lastBlock-cs.blockConfirmationsOnSubscription)
 					lastBlock -= cs.blockConfirmationsOnSubscription
 				} else {
 					time.Sleep(cs.retryInterval)
@@ -297,6 +302,10 @@ func (cs *ChainSubscriber) FilterLogsWithChannel(ctx context.Context, q ethereum
 				close(logsChan)
 				return
 			default:
+				if endBlock < startBlock {
+					endBlock = startBlock
+				}
+
 				if endBlock > toBlock {
 					endBlock = toBlock
 				}
@@ -305,7 +314,8 @@ func (cs *ChainSubscriber) FilterLogsWithChannel(ctx context.Context, q ethereum
 					endBlock = lastBlock
 				}
 
-				log.Info("start filtering logs", "queryHash", query.Hash(), "from", startBlock, "to", endBlock, "latest", lastBlock)
+				log.Info("start filtering logs", "queryHash", query.Hash(), "currBlocksPerScan", cs.currBlocksPerScan,
+					"from", startBlock, "to", endBlock, "latest", lastBlock)
 
 				filterQuery := ethereum.FilterQuery{
 					BlockHash: nil,
@@ -336,11 +346,20 @@ func (cs *ChainSubscriber) FilterLogsWithChannel(ctx context.Context, q ethereum
 						So, we can adjust block range or reduce count of addresses being monitored.
 					*/
 					if err == nil {
+						cs.currBlocksPerScan *= 2
 						saveFilterLogsErr := cs.storage.SaveFilterLogs(filterQuery, lgs)
 						if saveFilterLogsErr != nil {
 							log.Error("save filter logs failed", "err", saveFilterLogsErr, "query", query)
 							time.Sleep(cs.retryInterval)
 							continue Scan
+						}
+					} else {
+						err = consts.DecodeJsonRpcError(err, abi.ABI{})
+						jsonRpcErr := err.(*consts.JsonRpcError)
+						if jsonRpcErr.Code == consts.JsonRpcErrorCodeLimitExceeded {
+							blocksPerScanToDebase := cs.currBlocksPerScan - cs.blocksPerScan
+							cs.currBlocksPerScan = cs.blocksPerScan
+							endBlock -= blocksPerScanToDebase
 						}
 					}
 				}
@@ -402,7 +421,7 @@ func (cs *ChainSubscriber) FilterLogsWithChannel(ctx context.Context, q ethereum
 					}
 				}
 
-				startBlock, endBlock = endBlock+1, endBlock+cs.blocksPerScan
+				startBlock, endBlock = endBlock+1, endBlock+cs.currBlocksPerScan
 			}
 		}
 
