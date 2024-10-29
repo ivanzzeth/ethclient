@@ -28,6 +28,7 @@ type ChainSubscriber struct {
 	buffer                           int
 	blocksPerScan                    uint64
 	currBlocksPerScan                uint64 // adjust dynamiclly
+	maxBlocksPerScan                 uint64
 	blockConfirmationsOnSubscription uint64
 	storage                          SubscriberStorage
 	queryHandler                     QueryHandler
@@ -48,6 +49,7 @@ func NewChainSubscriber(c *ethclient.Client, storage SubscriberStorage) (*ChainS
 		buffer:            consts.DefaultMsgBuffer,
 		blocksPerScan:     consts.DefaultBlocksPerScan,
 		currBlocksPerScan: consts.DefaultBlocksPerScan,
+		maxBlocksPerScan:  consts.MaxBlocksPerScan,
 		retryInterval:     consts.RetryInterval,
 		storage:           storage,
 	}
@@ -68,6 +70,10 @@ func (s *ChainSubscriber) Close() {
 
 func (s *ChainSubscriber) SetBlocksPerScan(blocksPerScan uint64) {
 	s.blocksPerScan = blocksPerScan
+}
+
+func (s *ChainSubscriber) SetMaxBlocksPerScan(maxBlocksPerScan uint64) {
+	s.maxBlocksPerScan = maxBlocksPerScan
 }
 
 func (s *ChainSubscriber) SetRetryInterval(retryInterval time.Duration) {
@@ -349,8 +355,8 @@ func (cs *ChainSubscriber) FilterLogsWithChannel(ctx context.Context, q ethereum
 					*/
 					if err == nil {
 						cs.currBlocksPerScan *= 2
-						if cs.currBlocksPerScan > consts.MaxBlocksPerScan {
-							cs.currBlocksPerScan = consts.MaxBlocksPerScan
+						if cs.currBlocksPerScan > cs.maxBlocksPerScan {
+							cs.currBlocksPerScan = cs.maxBlocksPerScan
 						}
 						saveFilterLogsErr := cs.storage.SaveFilterLogs(filterQuery, lgs)
 						if saveFilterLogsErr != nil {
