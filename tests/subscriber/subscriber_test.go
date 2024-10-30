@@ -11,8 +11,8 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/go-redsync/redsync/v4/redis/goredis/v9"
-	"github.com/ivanzzeth/ethclient"
 	"github.com/ivanzzeth/ethclient/message"
+	"github.com/ivanzzeth/ethclient/simulated"
 	"github.com/ivanzzeth/ethclient/subscriber"
 	"github.com/ivanzzeth/ethclient/tests/helper"
 	goredislib "github.com/redis/go-redis/v9"
@@ -24,19 +24,21 @@ func Test_Subscriber(t *testing.T) {
 	logger := log.NewLogger(handler)
 	log.SetDefault(logger)
 
-	client := helper.SetUpClient(t)
-	defer client.Close()
+	sim := helper.SetUpClient(t)
+	defer sim.Close()
 
-	testSubscriber(t, client, 3)
+	testSubscriber(t, sim, 3)
 }
 
-func Test_Subscriber_UsingRedisStorage(t *testing.T) {
+func test_Subscriber_UsingRedisStorage(t *testing.T) {
 	handler := log.NewTerminalHandler(os.Stdout, true)
 	logger := log.NewLogger(handler)
 	log.SetDefault(logger)
 
-	client := helper.SetUpClient(t)
-	defer client.Close()
+	sim := helper.SetUpClient(t)
+	defer sim.Close()
+
+	client := sim.Client()
 
 	chainId, err := client.ChainID(context.Background())
 	if err != nil {
@@ -58,17 +60,18 @@ func Test_Subscriber_UsingRedisStorage(t *testing.T) {
 
 	client.SetSubscriber(subscriber)
 
-	testSubscriber(t, client, 0)
+	testSubscriber(t, sim, 0)
 }
 
-func testSubscriber(t *testing.T, client *ethclient.Client, confirmations uint64) {
+func testSubscriber(t *testing.T, sim *simulated.Backend, confirmations uint64) {
+	client := sim.Client()
 	client.SetBlockConfirmationsOnSubscription(confirmations)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
 	defer cancel()
 
 	// Deploy Test contract.
-	_, _, contract := helper.DeployTestContract(t, ctx, client)
+	_, _, contract := helper.DeployTestContract(t, ctx, sim)
 
 	// Subscribe logs
 
@@ -101,7 +104,9 @@ func testSubscriber(t *testing.T, client *ethclient.Client, confirmations uint64
 		t.Fatalf("TestFunc1 err: %v", err)
 	}
 
-	receipt, contains := client.WaitTxReceipt(contractCallTx.Hash(), 2, 5*time.Second)
+	sim.CommitAndExpectTx(contractCallTx.Hash())
+
+	receipt, contains := client.WaitTxReceipt(contractCallTx.Hash(), 0, 5*time.Second)
 	assert.Equal(t, true, contains)
 	t.Log("contractCallTx send sucessul", "txHash", contractCallTx.Hash().Hex(), "block", receipt.BlockNumber.Uint64())
 
@@ -128,10 +133,17 @@ func testSubscriber(t *testing.T, client *ethclient.Client, confirmations uint64
 		t.Fatalf("TestFunc1 err: %v", err)
 	}
 
-	t.Log("contractCallTx send sucessul", "txHash", contractCallTx.Hash().Hex())
+	sim.CommitAndExpectTx(contractCallTx.Hash())
 
-	receipt, contains = client.WaitTxReceipt(contractCallTx.Hash(), 2, 5*time.Second)
+	receipt, contains = client.WaitTxReceipt(contractCallTx.Hash(), 0, 5*time.Second)
+	assert.Equal(t, true, contains)
 	t.Log("contractCallTx send sucessul", "txHash", contractCallTx.Hash().Hex(), "block", receipt.BlockNumber.Uint64())
+
+	for i := 0; i < int(confirmations); i++ {
+		sim.Commit()
+	}
+
+	time.Sleep(10 * time.Second)
 
 	toBlock, err := client.BlockNumber(ctx)
 	if err != nil {
@@ -147,11 +159,8 @@ func testSubscriber(t *testing.T, client *ethclient.Client, confirmations uint64
 		t.Fatal(err)
 	}
 
-	assert.Equal(t, 4, len(filteredLogs))
-
-	time.Sleep(5 * time.Second)
-	assert.Equal(t, true, contains)
-	assert.Equal(t, 4, logCount)
+	assert.Equal(t, 4, len(filteredLogs), "filter logs failed")
+	assert.Equal(t, 4, logCount, "subscribe logs failed")
 
 	t.Log("Exit")
 }

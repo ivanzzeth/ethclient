@@ -5,5 +5,6 @@ import "time"
 const (
 	RetryInterval        = 3 * time.Second
 	DefaultMsgBuffer     = 1000
-	DefaultBlocksPerScan = 100
+	DefaultBlocksPerScan = uint64(100)
+	MaxBlocksPerScan     = uint64(10000000)
 )

@@ -76,5 +76,6 @@ func Dial(rawurl string) (*Client, error) {
 		return nil, err
 	}
 
-	return NewMemoryClient(rpcClient)
+	client := NewClient(rpcClient)
+	return client, nil
 }
