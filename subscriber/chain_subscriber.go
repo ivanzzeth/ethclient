@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum"
+	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
@@ -26,6 +27,8 @@ type ChainSubscriber struct {
 	retryInterval                    time.Duration
 	buffer                           int
 	blocksPerScan                    uint64
+	currBlocksPerScan                uint64 // adjust dynamiclly
+	maxBlocksPerScan                 uint64
 	blockConfirmationsOnSubscription uint64
 	storage                          SubscriberStorage
 	queryHandler                     QueryHandler
@@ -41,12 +44,14 @@ func NewChainSubscriber(c *ethclient.Client, storage SubscriberStorage) (*ChainS
 	}
 
 	subscriber := &ChainSubscriber{
-		c:             c,
-		chainId:       chainId,
-		buffer:        consts.DefaultMsgBuffer,
-		blocksPerScan: consts.DefaultBlocksPerScan,
-		retryInterval: consts.RetryInterval,
-		storage:       storage,
+		c:                 c,
+		chainId:           chainId,
+		buffer:            consts.DefaultMsgBuffer,
+		blocksPerScan:     consts.DefaultBlocksPerScan,
+		currBlocksPerScan: consts.DefaultBlocksPerScan,
+		maxBlocksPerScan:  consts.MaxBlocksPerScan,
+		retryInterval:     consts.RetryInterval,
+		storage:           storage,
 	}
 
 	return subscriber, nil
@@ -65,6 +70,10 @@ func (s *ChainSubscriber) Close() {
 
 func (s *ChainSubscriber) SetBlocksPerScan(blocksPerScan uint64) {
 	s.blocksPerScan = blocksPerScan
+}
+
+func (s *ChainSubscriber) SetMaxBlocksPerScan(maxBlocksPerScan uint64) {
+	s.maxBlocksPerScan = maxBlocksPerScan
 }
 
 func (s *ChainSubscriber) SetRetryInterval(retryInterval time.Duration) {
@@ -191,6 +200,10 @@ func (cs *ChainSubscriber) FilterLogs(ctx context.Context, q ethereum.FilterQuer
 	return
 }
 
+// TODO:
+// 1. reduce eth_blockNumber calls
+// 2. cache eth_chainId
+// 3. cache all of finalized historical data, e.g., blockByHash, txByHash
 func (cs *ChainSubscriber) FilterLogsWithChannel(ctx context.Context, q ethereum.FilterQuery, logsChan chan<- types.Log, watch bool, closeOnExit bool) (err error) {
 	if q.BlockHash != nil {
 		logs, err := cs.c.FilterLogs(ctx, q)
@@ -246,10 +259,12 @@ func (cs *ChainSubscriber) FilterLogsWithChannel(ctx context.Context, q ethereum
 		}
 	}
 
-	endBlock := startBlock + cs.blocksPerScan
+	endBlock := startBlock + cs.currBlocksPerScan
 
 	query := NewQuery(cs.chainId, q)
-	log.Debug("FilterLogsWithChannel starts", "queryHash", query.Hash(), "from", fromBlock, "to", toBlock, "startBlock", startBlock, "endBlock", endBlock)
+	log.Debug("FilterLogsWithChannel starts", "queryHash", query.Hash(),
+		"blocksPerScan", cs.blocksPerScan, "currBlocksPerScan", cs.currBlocksPerScan,
+		"from", fromBlock, "to", toBlock, "startBlock", startBlock, "endBlock", endBlock)
 
 	go func() {
 	Scan:
@@ -264,7 +279,8 @@ func (cs *ChainSubscriber) FilterLogsWithChannel(ctx context.Context, q ethereum
 
 			if watch {
 				if lastBlock >= cs.blockConfirmationsOnSubscription {
-					log.Info("filtering logs decreases lastBlock for confirmations", "queryHash", query.Hash(), "lastBlock", lastBlock, "after", lastBlock-cs.blockConfirmationsOnSubscription)
+					log.Info("filtering logs decreases lastBlock for confirmations", "queryHash", query.Hash(),
+						"lastBlock", lastBlock, "after", lastBlock-cs.blockConfirmationsOnSubscription)
 					lastBlock -= cs.blockConfirmationsOnSubscription
 				} else {
 					time.Sleep(cs.retryInterval)
@@ -293,6 +309,10 @@ func (cs *ChainSubscriber) FilterLogsWithChannel(ctx context.Context, q ethereum
 				close(logsChan)
 				return
 			default:
+				if endBlock < startBlock {
+					endBlock = startBlock
+				}
+
 				if endBlock > toBlock {
 					endBlock = toBlock
 				}
@@ -301,7 +321,9 @@ func (cs *ChainSubscriber) FilterLogsWithChannel(ctx context.Context, q ethereum
 					endBlock = lastBlock
 				}
 
-				log.Info("start filtering logs", "queryHash", query.Hash(), "from", startBlock, "to", endBlock, "latest", lastBlock)
+				log.Info("start filtering logs", "queryHash", query.Hash(),
+					"currBlocksPerScan", cs.currBlocksPerScan, "blocksPerScan", cs.blocksPerScan,
+					"from", startBlock, "to", endBlock, "latest", lastBlock)
 
 				filterQuery := ethereum.FilterQuery{
 					BlockHash: nil,
@@ -316,12 +338,39 @@ func (cs *ChainSubscriber) FilterLogsWithChannel(ctx context.Context, q ethereum
 					lgs, err = cs.storage.FilterLogs(ctx, filterQuery)
 				} else {
 					lgs, err = cs.c.FilterLogs(ctx, filterQuery)
+
+					/*
+						If a query returns too many results or exceeds the max query duration,
+						the following error is returned like below:
+						{
+							"jsonrpc": "2.0",
+							"id": 1,
+							"error": {
+								"code": -32005,
+								"message": "query returned more than 10000 results"
+							}
+						}
+
+						So, we can adjust block range or reduce count of addresses being monitored.
+					*/
 					if err == nil {
+						cs.currBlocksPerScan *= 2
+						if cs.currBlocksPerScan > cs.maxBlocksPerScan {
+							cs.currBlocksPerScan = cs.maxBlocksPerScan
+						}
 						saveFilterLogsErr := cs.storage.SaveFilterLogs(filterQuery, lgs)
 						if saveFilterLogsErr != nil {
 							log.Error("save filter logs failed", "err", saveFilterLogsErr, "query", query)
 							time.Sleep(cs.retryInterval)
 							continue Scan
+						}
+					} else {
+						err = consts.DecodeJsonRpcError(err, abi.ABI{})
+						jsonRpcErr := err.(*consts.JsonRpcError)
+						if jsonRpcErr.Code == consts.JsonRpcErrorCodeLimitExceeded {
+							blocksPerScanToDebase := cs.currBlocksPerScan - cs.blocksPerScan
+							cs.currBlocksPerScan = cs.blocksPerScan
+							endBlock -= blocksPerScanToDebase
 						}
 					}
 				}
@@ -372,6 +421,7 @@ func (cs *ChainSubscriber) FilterLogsWithChannel(ctx context.Context, q ethereum
 					}
 				}
 
+				// TODO: fix SaveLatestBlockForQuery not called when there's no logs.
 				if useStorage && queryStateWriter != nil {
 					log.Debug("SaveLatestBlockForQuery", "queryHash", query.Hash(), "query", q, "block", endBlock)
 					err = queryStateWriter.SaveLatestBlockForQuery(ctx, q, endBlock)
@@ -382,7 +432,7 @@ func (cs *ChainSubscriber) FilterLogsWithChannel(ctx context.Context, q ethereum
 					}
 				}
 
-				startBlock, endBlock = endBlock+1, endBlock+cs.blocksPerScan
+				startBlock, endBlock = endBlock+1, endBlock+cs.currBlocksPerScan
 			}
 		}
 

@@ -601,16 +601,5 @@ func (c *Client) AddABI(intf abi.ABI) {
 }
 
 func (c *Client) DecodeJsonRpcError(err error) error {
-	jsonErr := &consts.JsonRpcError{Abi: c.abi, RawError: err.Error()}
-	ec, ok := err.(rpc.Error)
-	if ok {
-		jsonErr.Code = ec.ErrorCode()
-	}
-
-	de, ok := err.(rpc.DataError)
-	if ok {
-		jsonErr.Data = de.ErrorData()
-	}
-
-	return jsonErr
+	return consts.DecodeJsonRpcError(err, c.abi)
 }

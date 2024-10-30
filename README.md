@@ -6,6 +6,13 @@ Extension ethclient.
 ## Prerequisites
 golang
 
+## Feautres
+- [x] Schedule message
+- [x] Sequence message
+- [x] Protect message
+- [x] Nonce management
+- [ ] Multiple rpc url supported
+
 ## Quick Start
 ```go
 package main
