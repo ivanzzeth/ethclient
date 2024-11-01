@@ -243,7 +243,7 @@ func (cs *ChainSubscriber) FilterLogsWithChannel(ctx context.Context, q ethereum
 	var queryStateWriter QueryStateWriter = cs.storage
 	if cs.isQueryHandlerSet() {
 		queryStateReader = cs.queryHandler
-		queryStateWriter = nil
+		queryStateWriter = cs.queryHandler
 	}
 
 	startBlock := fromBlock
@@ -421,9 +421,8 @@ func (cs *ChainSubscriber) FilterLogsWithChannel(ctx context.Context, q ethereum
 					}
 				}
 
-				// TODO: fix SaveLatestBlockForQuery not called when there's no logs.
 				if useStorage && queryStateWriter != nil {
-					log.Debug("SaveLatestBlockForQuery", "queryHash", query.Hash(), "query", q, "block", endBlock)
+					log.Debug("ChainSubscribe SaveLatestBlockForQuery", "queryHash", query.Hash(), "query", q, "block", endBlock)
 					err = queryStateWriter.SaveLatestBlockForQuery(ctx, q, endBlock)
 					if err != nil {
 						log.Error("SaveLatestBlockForQuery failed", "err", err, "queryHash", query.Hash(), "query", q, "block", endBlock)

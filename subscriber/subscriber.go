@@ -54,7 +54,7 @@ type QueryStateWriter interface {
 type QueryHandler interface {
 	// Please update query states by handler-self, otherwise
 	// logs may be replayed
-	QueryStateReader
+	SubscriberStorage
 	// Subscriber will call back it for handling when incoming logs are ready.
 	HandleQuery(ctx context.Context, query Query, log types.Log) error
 }
