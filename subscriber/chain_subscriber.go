@@ -410,7 +410,10 @@ func (cs *ChainSubscriber) FilterLogsWithChannel(ctx context.Context, q ethereum
 					}
 
 					logsChan <- l
-					if useStorage && queryStateWriter != nil {
+
+					// if query handler is set, make sure the log consumed seccessful.
+					// so we do not update latestLog after sending log.
+					if useStorage && queryStateWriter != nil && !cs.isQueryHandlerSet() {
 						log.Debug("SaveLatestLogForQuery", "queryHash", query.Hash(), "query", q, "log", l)
 						err := queryStateWriter.SaveLatestLogForQuery(ctx, q, l)
 						if err != nil {
@@ -421,7 +424,9 @@ func (cs *ChainSubscriber) FilterLogsWithChannel(ctx context.Context, q ethereum
 					}
 				}
 
-				if useStorage && queryStateWriter != nil {
+				// if there's no logs emmited during block range, enforcely update latestBlock
+				// if query handler is not set, update latestBlock.
+				if useStorage && queryStateWriter != nil && (!cs.isQueryHandlerSet() || len(lgs) == 0) {
 					log.Debug("ChainSubscribe SaveLatestBlockForQuery", "queryHash", query.Hash(), "query", q, "block", endBlock)
 					err = queryStateWriter.SaveLatestBlockForQuery(ctx, q, endBlock)
 					if err != nil {
