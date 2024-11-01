@@ -367,7 +367,13 @@ func (cs *ChainSubscriber) FilterLogsWithChannel(ctx context.Context, q ethereum
 					} else {
 						err = consts.DecodeJsonRpcError(err, abi.ABI{})
 						jsonRpcErr := err.(*consts.JsonRpcError)
-						if jsonRpcErr.Code == consts.JsonRpcErrorCodeLimitExceeded {
+						// Do not use JsonRpcErrorCodeLimitExceeded any more, becasuse
+						// actual rpc that ethclient used may be behind jsonrpc gateway.
+
+						// if jsonRpcErr.Code == consts.JsonRpcErrorCodeLimitExceeded {
+
+						// if any error encountered, just reset currBlocksPerScan
+						if jsonRpcErr.Code != 0 {
 							blocksPerScanToDebase := cs.currBlocksPerScan - cs.blocksPerScan
 							cs.currBlocksPerScan = cs.blocksPerScan
 							endBlock -= blocksPerScanToDebase
