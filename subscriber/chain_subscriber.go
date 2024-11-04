@@ -2,6 +2,7 @@ package subscriber
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math/big"
 	"sync"
@@ -13,6 +14,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/ivanzzeth/ethclient/common/consts"
 )
 
@@ -150,7 +152,7 @@ func (cs *ChainSubscriber) SubmitQuery(query ethereum.FilterQuery) error {
 
 	queryOnce.Do(func() {
 		for {
-			err := cs.FilterLogsWithChannel(context.Background(), query, globalLogsChannel, true, true)
+			err := cs.FilterLogsWithChannel(cs.queryCtx, query, globalLogsChannel, true, true)
 			if err != nil {
 				log.Warn("submit query subscription failed, waiting for retrying", "err", err,
 					"queryHash", queryHash)
@@ -278,46 +280,48 @@ func (cs *ChainSubscriber) FilterLogsWithChannel(ctx context.Context, q ethereum
 	go func() {
 	Scan:
 		for {
-			lastBlock, err := cs.c.BlockNumber(ctx)
-			if err != nil {
-				// More time to avoid rate-limit
-				log.Warn("get block number failed", "err", err)
-				time.Sleep(5 * cs.retryInterval)
-				continue
-			}
-
-			if watch {
-				if lastBlock >= cs.blockConfirmationsOnSubscription {
-					log.Info("filtering logs decreases lastBlock for confirmations", "queryHash", query.Hash(),
-						"lastBlock", lastBlock, "after", lastBlock-cs.blockConfirmationsOnSubscription)
-					lastBlock -= cs.blockConfirmationsOnSubscription
-				} else {
-					time.Sleep(cs.retryInterval)
-					continue
-				}
-			}
-
-			if startBlock > toBlock || (watch && startBlock > lastBlock) {
-				if !watch {
-					break
-				}
-
-				// Update toBlock
-				if lastBlock >= startBlock {
-					toBlock = lastBlock
-				} else {
-					log.Debug("FilterLogsWithChannel waits for new block generated", "queryHash", query.Hash(), "lastBlock", lastBlock, "confirmations", cs.blockConfirmationsOnSubscription)
-					time.Sleep(cs.retryInterval)
-					continue
-				}
-			}
-
 			select {
 			case <-ctx.Done():
 				log.Debug("FilterLogsWithChannel exits", "err", ctx.Err(), "queryHash", query.Hash(), "from", fromBlock, "to", toBlock, "startBlock", startBlock, "endBlock", endBlock)
 				close(logsChan)
 				return
 			default:
+				lastBlock, err := cs.c.BlockNumber(ctx)
+				if err != nil {
+					if errors.Is(err, rpc.ErrClientQuit) {
+						continue Scan
+					}
+					// More time to avoid rate-limit
+					log.Warn("get block number failed", "err", err)
+					time.Sleep(5 * cs.retryInterval)
+					continue Scan
+				}
+
+				if watch {
+					if lastBlock >= cs.blockConfirmationsOnSubscription {
+						log.Info("filtering logs decreases lastBlock for confirmations", "queryHash", query.Hash(),
+							"lastBlock", lastBlock, "after", lastBlock-cs.blockConfirmationsOnSubscription)
+						lastBlock -= cs.blockConfirmationsOnSubscription
+					} else {
+						time.Sleep(cs.retryInterval)
+						continue Scan
+					}
+				}
+
+				if startBlock > toBlock || (watch && startBlock > lastBlock) {
+					if !watch {
+						break Scan
+					}
+
+					// Update toBlock
+					if lastBlock >= startBlock {
+						toBlock = lastBlock
+					} else {
+						log.Debug("FilterLogsWithChannel waits for new block generated", "queryHash", query.Hash(), "lastBlock", lastBlock, "confirmations", cs.blockConfirmationsOnSubscription)
+						time.Sleep(cs.retryInterval)
+						continue Scan
+					}
+				}
 				if endBlock < startBlock {
 					endBlock = startBlock
 				}

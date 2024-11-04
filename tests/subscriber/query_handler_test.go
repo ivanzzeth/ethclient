@@ -27,9 +27,11 @@ func Test_QueryHandler(t *testing.T) {
 	log.SetDefault(logger)
 
 	sim := helper.SetUpClient(t)
-	defer sim.Close()
 
 	test_QueryHandler(t, sim)
+	sim.Close()
+
+	time.Sleep(10 * time.Second)
 }
 
 // TODO:
