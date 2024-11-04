@@ -31,9 +31,12 @@ type ChainSubscriber struct {
 	maxBlocksPerScan                 uint64
 	blockConfirmationsOnSubscription uint64
 	storage                          SubscriberStorage
-	queryHandler                     QueryHandler
-	queryMap                         sync.Map
-	globalLogsChannels               sync.Map
+
+	queryCtx           context.Context
+	cancelQueryCtx     context.CancelFunc
+	queryHandler       QueryHandler
+	queryMap           sync.Map
+	globalLogsChannels sync.Map
 }
 
 // NewChainSubscriber .
@@ -42,6 +45,8 @@ func NewChainSubscriber(c *ethclient.Client, storage SubscriberStorage) (*ChainS
 	if err != nil {
 		return nil, err
 	}
+
+	queryCtx, cancel := context.WithCancel(context.Background())
 
 	subscriber := &ChainSubscriber{
 		c:                 c,
@@ -52,6 +57,8 @@ func NewChainSubscriber(c *ethclient.Client, storage SubscriberStorage) (*ChainS
 		maxBlocksPerScan:  consts.MaxBlocksPerScan,
 		retryInterval:     consts.RetryInterval,
 		storage:           storage,
+		queryCtx:          queryCtx,
+		cancelQueryCtx:    cancel,
 	}
 
 	return subscriber, nil
@@ -59,6 +66,8 @@ func NewChainSubscriber(c *ethclient.Client, storage SubscriberStorage) (*ChainS
 
 func (s *ChainSubscriber) Close() {
 	log.Debug("close subscriber...")
+	s.cancelQueryCtx()
+
 	// s.queryMap.Range(func(key, _ any) bool {
 	// 	queryHash := key.(common.Hash)
 	// 	ch := s.getQueryLogChannel(queryHash)
@@ -417,10 +426,10 @@ func (cs *ChainSubscriber) FilterLogsWithChannel(ctx context.Context, q ethereum
 
 					logsChan <- l
 
-					// if query handler is set, make sure the log consumed seccessful.
-					// so we do not update latestLog after sending log.
+					// if query handler is set, HandleQuery will be called.
+					// so we do not update latestLog twice after sending log.
 					if useStorage && queryStateWriter != nil && !cs.isQueryHandlerSet() {
-						log.Debug("SaveLatestLogForQuery", "queryHash", query.Hash(), "query", q, "log", l)
+						log.Debug("ChainSubscribe SaveLatestLogForQuery", "queryHash", query.Hash(), "query", q, "log", l)
 						err := queryStateWriter.SaveLatestLogForQuery(ctx, q, l)
 						if err != nil {
 							log.Error("SaveLatestLogForQuery failed", "err", err, "queryHash", query.Hash(), "query", q, "block", endBlock)
