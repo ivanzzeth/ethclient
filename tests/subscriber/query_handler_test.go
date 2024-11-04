@@ -30,8 +30,6 @@ func Test_QueryHandler(t *testing.T) {
 
 	test_QueryHandler(t, sim)
 	sim.Close()
-
-	time.Sleep(10 * time.Second)
 }
 
 // TODO:
