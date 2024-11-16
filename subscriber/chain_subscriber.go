@@ -2,10 +2,10 @@ package subscriber
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"math/big"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/ethereum/go-ethereum"
@@ -14,7 +14,6 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/ivanzzeth/ethclient/common/consts"
 )
 
@@ -28,6 +27,7 @@ type ChainSubscriber struct {
 	chainId                          *big.Int
 	retryInterval                    time.Duration
 	buffer                           int
+	fetchMissingHeaders              bool
 	blocksPerScan                    uint64
 	currBlocksPerScan                uint64 // adjust dynamiclly
 	maxBlocksPerScan                 uint64
@@ -132,6 +132,10 @@ func (cs *ChainSubscriber) GetQueryHandler() QueryHandler {
 
 func (cs *ChainSubscriber) isQueryHandlerSet() bool {
 	return cs.queryHandler != nil
+}
+
+func (cs *ChainSubscriber) SetFetchMissingHeaders(enable bool) {
+	cs.fetchMissingHeaders = enable
 }
 
 func (cs *ChainSubscriber) SubmitQuery(query ethereum.FilterQuery) error {
@@ -266,6 +270,7 @@ func (cs *ChainSubscriber) FilterLogsWithChannel(ctx context.Context, q ethereum
 		}
 
 		if fromBlockInStorage != 0 {
+			log.Info("fromBlock in storage was found, then use it", "fromBlockInStorage", fromBlockInStorage)
 			startBlock = fromBlockInStorage + 1
 		}
 	}
@@ -277,23 +282,48 @@ func (cs *ChainSubscriber) FilterLogsWithChannel(ctx context.Context, q ethereum
 		"blocksPerScan", cs.blocksPerScan, "currBlocksPerScan", cs.currBlocksPerScan,
 		"from", fromBlock, "to", toBlock, "startBlock", startBlock, "endBlock", endBlock)
 
+	var lastBlockAtomic atomic.Uint64
+
+	headersChan := make(chan *types.Header)
+	headersSub, err := cs.c.SubscribeNewHead(ctx, headersChan)
+	if err != nil {
+		return err
+	}
+
+	go func() {
+		for {
+			lastBlock, err := cs.c.BlockNumber(ctx)
+			if err != nil {
+				time.Sleep(cs.retryInterval)
+				continue
+			}
+
+			lastBlockAtomic.Store(lastBlock)
+			break
+		}
+
+		for header := range headersChan {
+			if header.Number.Uint64() <= lastBlockAtomic.Load() {
+				continue
+			}
+
+			lastBlockAtomic.Store(header.Number.Uint64())
+		}
+	}()
+
 	go func() {
 	Scan:
 		for {
 			select {
 			case <-ctx.Done():
 				log.Debug("FilterLogsWithChannel exits", "err", ctx.Err(), "client", fmt.Sprintf("%p", cs.c), "queryHash", query.Hash(), "from", fromBlock, "to", toBlock, "startBlock", startBlock, "endBlock", endBlock)
+				headersSub.Unsubscribe()
 				close(logsChan)
 				return
 			default:
-				lastBlock, err := cs.c.BlockNumber(ctx)
-				if err != nil {
-					if errors.Is(err, rpc.ErrClientQuit) {
-						continue Scan
-					}
-					// More time to avoid rate-limit
-					log.Warn("get block number failed", "err", err)
-					time.Sleep(5 * cs.retryInterval)
+				lastBlock := lastBlockAtomic.Load()
+				if lastBlock == 0 {
+					time.Sleep(cs.retryInterval)
 					continue Scan
 				}
 
@@ -464,6 +494,7 @@ func (cs *ChainSubscriber) FilterLogsWithChannel(ctx context.Context, q ethereum
 
 		if closeOnExit {
 			log.Debug("FilterLogsWithChannel was closed...", "queryHash", query.Hash())
+			headersSub.Unsubscribe()
 			close(logsChan)
 		}
 	}()
@@ -502,25 +533,27 @@ func (cs *ChainSubscriber) subscribeNewHead(ctx context.Context, fn resubscribeF
 						continue
 					} else {
 						// Get missing headers
-						start, end := new(big.Int).Add(lastHeader.Number, big.NewInt(1)), result.Number
-						for start.Cmp(end) < 0 {
-							header, err := cs.c.HeaderByNumber(ctx, start)
-							switch err {
-							case context.DeadlineExceeded, context.Canceled:
-								log.Debug("SubscribeNewHead HeaderByNumber exit...")
-								return
-							case ethereum.NotFound:
-								log.Warn("Client subscribeNewHead err: header not found")
-								time.Sleep(consts.RetryInterval)
-								continue
-							case nil:
-								log.Debug("Client get missing header", "number", start)
-								start.Add(start, big.NewInt(1))
-								resultChan <- header
-							default: // ! nil
-								log.Warn("Client subscribeNewHead", "err", err)
-								time.Sleep(consts.RetryInterval)
-								continue
+						if cs.fetchMissingHeaders {
+							start, end := new(big.Int).Add(lastHeader.Number, big.NewInt(1)), result.Number
+							for start.Cmp(end) < 0 {
+								header, err := cs.c.HeaderByNumber(ctx, start)
+								switch err {
+								case context.DeadlineExceeded, context.Canceled:
+									log.Debug("SubscribeNewHead HeaderByNumber exit...")
+									return
+								case ethereum.NotFound:
+									log.Warn("Client subscribeNewHead err: header not found")
+									time.Sleep(consts.RetryInterval)
+									continue
+								case nil:
+									log.Debug("Client get missing header", "number", start)
+									start.Add(start, big.NewInt(1))
+									resultChan <- header
+								default: // ! nil
+									log.Warn("Client subscribeNewHead", "err", err)
+									time.Sleep(consts.RetryInterval)
+									continue
+								}
 							}
 						}
 					}
@@ -546,10 +579,9 @@ func (cs *ChainSubscriber) subscribeNewHead(ctx context.Context, fn resubscribeF
 				continue
 			}
 
-			select {
-			case err := <-sub.Err():
-				log.Warn("ChainClient subscribe head", "err", err)
-				sub.Unsubscribe()
+			err = <-sub.Err()
+			log.Warn("ChainClient subscribe head", "err", err)
+			if err != nil {
 				time.Sleep(consts.RetryInterval)
 			}
 		}

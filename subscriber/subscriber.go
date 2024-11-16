@@ -16,6 +16,7 @@ type Subscriber interface {
 	SetBuffer(buffer int)
 	SetBlockConfirmationsOnSubscription(confirmations uint64)
 	SetQueryHandler(handler QueryHandler) // use QueryHandler instead of SubscriberStorage if handler set
+	SetFetchMissingHeaders(enable bool)
 
 	// Provided for handler submitting query.
 	SubmitQuery(query ethereum.FilterQuery) error

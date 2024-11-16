@@ -99,6 +99,9 @@ func testSubscriber(t *testing.T, sim *simulated.Backend, confirmations uint64) 
 	opts, err := client.MessageToTransactOpts(ctx, message.Request{
 		From: helper.Addr,
 	})
+	if err != nil {
+		t.Fatal(err)
+	}
 	contractCallTx, err := contract.TestFunc1(opts, arg1, arg2, arg3)
 	if err != nil {
 		t.Fatalf("TestFunc1 err: %v", err)
@@ -128,6 +131,9 @@ func testSubscriber(t *testing.T, sim *simulated.Backend, confirmations uint64) 
 	opts, err = client.MessageToTransactOpts(ctx, message.Request{
 		From: helper.Addr,
 	})
+	if err != nil {
+		t.Fatal(err)
+	}
 	contractCallTx, err = contract.TestFunc1(opts, arg1, arg2, arg3)
 	if err != nil {
 		t.Fatalf("TestFunc1 err: %v", err)
@@ -145,12 +151,13 @@ func testSubscriber(t *testing.T, sim *simulated.Backend, confirmations uint64) 
 
 	time.Sleep(10 * time.Second)
 
+	t.Log("FilterLogs...")
+
 	toBlock, err := client.BlockNumber(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	t.Log("FilterLogs...")
 	filteredLogs, err := client.FilterLogs(ctx, ethereum.FilterQuery{
 		FromBlock: big.NewInt(0).SetUint64(fromBlock),
 		ToBlock:   big.NewInt(0).SetUint64(toBlock),
