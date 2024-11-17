@@ -364,6 +364,7 @@ func (cs *ChainSubscriber) FilterLogsWithChannel(ctx context.Context, q ethereum
 				}
 				var lgs []types.Log
 
+				reduceBlocksPerScan := false
 				if cs.storage.IsFilterLogsSupported(filterQuery) {
 					lgs, err = cs.storage.FilterLogs(ctx, filterQuery)
 				} else {
@@ -404,9 +405,7 @@ func (cs *ChainSubscriber) FilterLogsWithChannel(ctx context.Context, q ethereum
 
 						// if any error encountered, just reset currBlocksPerScan
 						if jsonRpcErr.Code != 0 {
-							blocksPerScanToDebase := cs.currBlocksPerScan - cs.blocksPerScan
-							cs.currBlocksPerScan = cs.blocksPerScan
-							endBlock -= blocksPerScanToDebase
+							reduceBlocksPerScan = true
 						}
 					}
 				}
@@ -466,7 +465,7 @@ func (cs *ChainSubscriber) FilterLogsWithChannel(ctx context.Context, q ethereum
 					log.Debug("Subscriber FilterLogs SaveLatestBlockForQuery", "queryHash", query.Hash(), "query", q, "block", endBlock)
 					if cs.isQueryHandlerSet() && len(lgs) == 0 {
 						// Just notify latest block at which there's no logs emitted.
-						log.Info("notify latest block at which there's no logs emitted", "latestBlock", endBlock)
+						log.Debug("notify latest block at which there's no logs emitted", "latestBlock", endBlock)
 						logsChan <- types.Log{BlockNumber: endBlock}
 					} else {
 						err = queryStateWriter.SaveLatestBlockForQuery(ctx, q, endBlock)
@@ -476,6 +475,12 @@ func (cs *ChainSubscriber) FilterLogsWithChannel(ctx context.Context, q ethereum
 							continue Scan
 						}
 					}
+				}
+
+				if reduceBlocksPerScan {
+					blocksPerScanToDebase := cs.currBlocksPerScan - cs.blocksPerScan
+					cs.currBlocksPerScan = cs.blocksPerScan
+					endBlock -= blocksPerScanToDebase
 				}
 
 				startBlock, endBlock = endBlock+1, endBlock+cs.currBlocksPerScan
