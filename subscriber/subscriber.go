@@ -57,6 +57,7 @@ type QueryHandler interface {
 	// logs may be replayed
 	SubscriberStorage
 	// Subscriber will call back it for handling when incoming logs are ready.
+	// If log.Address is address(0), just for updating block number
 	HandleQuery(ctx context.Context, query Query, log types.Log) error
 }
 

@@ -206,7 +206,9 @@ func (h *testQueryHandler) HandleQuery(ctx context.Context, query subscriber.Que
 		return err
 	}
 
-	h.logsCounter.Add(1)
+	if log.Address.Cmp(common.Address{}) != 0 {
+		h.logsCounter.Add(1)
+	}
 
 	return nil
 }
