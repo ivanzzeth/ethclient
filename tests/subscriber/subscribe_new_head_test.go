@@ -8,6 +8,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ivanzzeth/ethclient"
 	"github.com/ivanzzeth/ethclient/simulated"
 	"github.com/ivanzzeth/ethclient/tests/helper"
 	"github.com/stretchr/testify/assert"
@@ -22,6 +23,37 @@ func Test_HeaderSubscriber(t *testing.T) {
 	defer sim.Close()
 
 	testHeaderSubscriber(t, sim)
+}
+
+func Test_RealHeaderSubscriber(t *testing.T) {
+	handler := log.NewTerminalHandler(os.Stdout, true)
+	logger := log.NewLogger(handler)
+	log.SetDefault(logger)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
+	defer cancel()
+
+	client, err := ethclient.Dial("wss://opbnb-rpc.publicnode.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Logf("dial successful")
+
+	ch := make(chan *types.Header)
+	sub, err := client.SubscribeNewHead(ctx, ch)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	defer sub.Unsubscribe()
+	go func() {
+		for header := range ch {
+			t.Logf("===> header: %v", header)
+		}
+	}()
+
+	time.Sleep(10 * time.Second)
 }
 
 func testHeaderSubscriber(t *testing.T, sim *simulated.Backend) {

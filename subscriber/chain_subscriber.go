@@ -278,36 +278,23 @@ func (cs *ChainSubscriber) FilterLogsWithChannel(ctx context.Context, q ethereum
 	endBlock := startBlock + cs.currBlocksPerScan
 
 	query := NewQuery(cs.chainId, q)
-	log.Debug("FilterLogsWithChannel starts", "queryHash", query.Hash(), "client", fmt.Sprintf("%p", cs.c),
+	log.Debug("Subscriber FilterLogs starts", "queryHash", query.Hash(), "client", fmt.Sprintf("%p", cs.c),
 		"blocksPerScan", cs.blocksPerScan, "currBlocksPerScan", cs.currBlocksPerScan,
 		"from", fromBlock, "to", toBlock, "startBlock", startBlock, "endBlock", endBlock)
 
 	var lastBlockAtomic atomic.Uint64
 
-	headersChan := make(chan *types.Header)
-	headersSub, err := cs.c.SubscribeNewHead(ctx, headersChan)
-	if err != nil {
-		return err
-	}
-
 	go func() {
 		for {
 			lastBlock, err := cs.c.BlockNumber(ctx)
 			if err != nil {
+				log.Warn("Subscriber gets block number failed", "err", err)
 				time.Sleep(cs.retryInterval)
 				continue
 			}
 
 			lastBlockAtomic.Store(lastBlock)
-			break
-		}
-
-		for header := range headersChan {
-			if header.Number.Uint64() <= lastBlockAtomic.Load() {
-				continue
-			}
-
-			lastBlockAtomic.Store(header.Number.Uint64())
+			time.Sleep(cs.retryInterval)
 		}
 	}()
 
@@ -316,8 +303,7 @@ func (cs *ChainSubscriber) FilterLogsWithChannel(ctx context.Context, q ethereum
 		for {
 			select {
 			case <-ctx.Done():
-				log.Debug("FilterLogsWithChannel exits", "err", ctx.Err(), "client", fmt.Sprintf("%p", cs.c), "queryHash", query.Hash(), "from", fromBlock, "to", toBlock, "startBlock", startBlock, "endBlock", endBlock)
-				headersSub.Unsubscribe()
+				log.Debug("Subscriber FilterLogs exits", "err", ctx.Err(), "client", fmt.Sprintf("%p", cs.c), "queryHash", query.Hash(), "from", fromBlock, "to", toBlock, "startBlock", startBlock, "endBlock", endBlock)
 				close(logsChan)
 				return
 			default:
@@ -329,7 +315,7 @@ func (cs *ChainSubscriber) FilterLogsWithChannel(ctx context.Context, q ethereum
 
 				if watch {
 					if lastBlock >= cs.blockConfirmationsOnSubscription {
-						log.Info("filtering logs decreases lastBlock for confirmations", "client", fmt.Sprintf("%p", cs.c),
+						log.Info("Subscriber FilterLogs decreases lastBlock for confirmations", "client", fmt.Sprintf("%p", cs.c),
 							"queryHash", query.Hash(),
 							"lastBlock", lastBlock, "after", lastBlock-cs.blockConfirmationsOnSubscription)
 						lastBlock -= cs.blockConfirmationsOnSubscription
@@ -348,7 +334,7 @@ func (cs *ChainSubscriber) FilterLogsWithChannel(ctx context.Context, q ethereum
 					if lastBlock >= startBlock {
 						toBlock = lastBlock
 					} else {
-						log.Debug("FilterLogsWithChannel waits for new block generated", "client", fmt.Sprintf("%p", cs.c),
+						log.Debug("Subscriber FilterLogs waits for new block generated", "client", fmt.Sprintf("%p", cs.c),
 							"queryHash", query.Hash(), "lastBlock", lastBlock,
 							"confirmations", cs.blockConfirmationsOnSubscription)
 						time.Sleep(cs.retryInterval)
@@ -367,7 +353,7 @@ func (cs *ChainSubscriber) FilterLogsWithChannel(ctx context.Context, q ethereum
 					endBlock = lastBlock
 				}
 
-				log.Info("start filtering logs", "client", fmt.Sprintf("%p", cs.c), "queryHash", query.Hash(),
+				log.Info("Subscriber FilterLogs starts filtering logs", "client", fmt.Sprintf("%p", cs.c), "queryHash", query.Hash(),
 					"currBlocksPerScan", cs.currBlocksPerScan, "blocksPerScan", cs.blocksPerScan,
 					"from", startBlock, "to", endBlock, "latest", lastBlock)
 
@@ -428,7 +414,7 @@ func (cs *ChainSubscriber) FilterLogsWithChannel(ctx context.Context, q ethereum
 				}
 
 				if err != nil {
-					log.Warn("filtering logs, waiting for retry...", "err", err, "queryHash", query.Hash())
+					log.Warn("Subscriber FilterLogs is waiting for retry...", "err", err, "queryHash", query.Hash())
 					time.Sleep(cs.retryInterval)
 					continue Scan
 				}
@@ -446,7 +432,7 @@ func (cs *ChainSubscriber) FilterLogsWithChannel(ctx context.Context, q ethereum
 				}
 
 				for _, l := range lgs {
-					log.Debug("FilterLogsWithChannel sending log", "queryHash", query.Hash(), "log", l, "latest_log", latestHandledLog)
+					log.Debug("Subscriber FilterLogs is sending log", "queryHash", query.Hash(), "log", l, "latest_log", latestHandledLog)
 
 					if latestHandledLog.BlockNumber > l.BlockNumber {
 						continue
@@ -466,10 +452,10 @@ func (cs *ChainSubscriber) FilterLogsWithChannel(ctx context.Context, q ethereum
 					// if query handler is set, HandleQuery will be called.
 					// so we do not update latestLog twice after sending log.
 					if useStorage && queryStateWriter != nil && !cs.isQueryHandlerSet() {
-						log.Debug("ChainSubscribe SaveLatestLogForQuery", "queryHash", query.Hash(), "query", q, "log", l)
+						log.Debug("Subscriber FilterLogs SaveLatestLogForQuery", "queryHash", query.Hash(), "query", q, "log", l)
 						err := queryStateWriter.SaveLatestLogForQuery(ctx, q, l)
 						if err != nil {
-							log.Error("SaveLatestLogForQuery failed", "err", err, "queryHash", query.Hash(), "query", q, "block", endBlock)
+							log.Error("Subscriber FilterLogs SaveLatestLogForQuery failed", "err", err, "queryHash", query.Hash(), "query", q, "block", endBlock)
 							time.Sleep(consts.RetryInterval)
 							continue Scan
 						}
@@ -479,7 +465,7 @@ func (cs *ChainSubscriber) FilterLogsWithChannel(ctx context.Context, q ethereum
 				// if there's no logs emmited during block range, enforcely update latestBlock
 				// if query handler is not set, update latestBlock.
 				if useStorage && queryStateWriter != nil && (!cs.isQueryHandlerSet() || len(lgs) == 0) {
-					log.Debug("ChainSubscribe SaveLatestBlockForQuery", "queryHash", query.Hash(), "query", q, "block", endBlock)
+					log.Debug("Subscriber FilterLogs SaveLatestBlockForQuery", "queryHash", query.Hash(), "query", q, "block", endBlock)
 					err = queryStateWriter.SaveLatestBlockForQuery(ctx, q, endBlock)
 					if err != nil {
 						log.Error("SaveLatestBlockForQuery failed", "err", err, "queryHash", query.Hash(), "query", q, "block", endBlock)
@@ -493,8 +479,7 @@ func (cs *ChainSubscriber) FilterLogsWithChannel(ctx context.Context, q ethereum
 		}
 
 		if closeOnExit {
-			log.Debug("FilterLogsWithChannel was closed...", "queryHash", query.Hash())
-			headersSub.Unsubscribe()
+			log.Debug("Subscriber FilterLogs was closed...", "queryHash", query.Hash())
 			close(logsChan)
 		}
 	}()
