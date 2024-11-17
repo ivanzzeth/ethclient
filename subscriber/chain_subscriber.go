@@ -216,8 +216,6 @@ func (cs *ChainSubscriber) FilterLogs(ctx context.Context, q ethereum.FilterQuer
 }
 
 // TODO:
-// 1. reduce eth_blockNumber calls
-// 2. cache eth_chainId
 // 3. cache all of finalized historical data, e.g., blockByHash, txByHash
 func (cs *ChainSubscriber) FilterLogsWithChannel(ctx context.Context, q ethereum.FilterQuery, logsChan chan<- types.Log, watch bool, closeOnExit bool) (err error) {
 	if q.BlockHash != nil {
@@ -315,7 +313,7 @@ func (cs *ChainSubscriber) FilterLogsWithChannel(ctx context.Context, q ethereum
 
 				if watch {
 					if lastBlock >= cs.blockConfirmationsOnSubscription {
-						log.Info("Subscriber FilterLogs decreases lastBlock for confirmations", "client", fmt.Sprintf("%p", cs.c),
+						log.Debug("Subscriber FilterLogs decreases lastBlock for confirmations", "client", fmt.Sprintf("%p", cs.c),
 							"queryHash", query.Hash(),
 							"lastBlock", lastBlock, "after", lastBlock-cs.blockConfirmationsOnSubscription)
 						lastBlock -= cs.blockConfirmationsOnSubscription
@@ -353,7 +351,7 @@ func (cs *ChainSubscriber) FilterLogsWithChannel(ctx context.Context, q ethereum
 					endBlock = lastBlock
 				}
 
-				log.Info("Subscriber FilterLogs starts filtering logs", "client", fmt.Sprintf("%p", cs.c), "queryHash", query.Hash(),
+				log.Debug("Subscriber FilterLogs starts filtering logs", "client", fmt.Sprintf("%p", cs.c), "queryHash", query.Hash(),
 					"currBlocksPerScan", cs.currBlocksPerScan, "blocksPerScan", cs.blocksPerScan,
 					"from", startBlock, "to", endBlock, "latest", lastBlock)
 
