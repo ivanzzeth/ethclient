@@ -15,6 +15,7 @@ var _ Manager = &SimpleManager{}
 type SimpleManager struct {
 	Storage
 	backend ethBackend
+	NonceAt NonceAtFunc
 }
 
 var snm *SimpleManager
@@ -35,6 +36,7 @@ func NewSimpleManager(backend ethBackend, storage Storage) (*SimpleManager, erro
 	return &SimpleManager{
 		Storage: storage,
 		backend: backend,
+		NonceAt: backend.NonceAt,
 	}, nil
 }
 
@@ -53,13 +55,14 @@ func (nm *SimpleManager) PendingNonceAt(ctx context.Context, account common.Addr
 		return 0, err
 	}
 
-	nonceInLatest, err := nm.backend.PendingNonceAt(ctx, account)
-	if err != nil {
-		return 0, err
-	}
-
-	if nonce == 0 || nonceInLatest > nonce {
-		nonce, err = nm.backend.PendingNonceAt(ctx, account)
+	var nonceInLatest uint64
+	if nm.NonceAt == nil {
+		nonceInLatest, err = nm.backend.NonceAt(ctx, account, nil)
+		if err != nil {
+			return 0, err
+		}
+	} else {
+		nonceInLatest, err = nm.NonceAt(ctx, account, nil)
 		if err != nil {
 			return 0, err
 		}
@@ -112,14 +115,22 @@ func (nm *SimpleManager) PeekNonce(account common.Address) (uint64, error) {
 	return nonce, nil
 }
 
-func (nm *SimpleManager) ResetNonce(ctx context.Context, account common.Address) error {
+func (nm *SimpleManager) ResetNonce(ctx context.Context, account common.Address) (err error) {
 	locker := nm.NonceLockFrom(account)
 	locker.Lock()
 	defer locker.Unlock()
 
-	nonceInLatest, err := nm.backend.PendingNonceAt(ctx, account)
-	if err != nil {
-		return err
+	var nonceInLatest uint64
+	if nm.NonceAt == nil {
+		nonceInLatest, err = nm.backend.NonceAt(ctx, account, nil)
+		if err != nil {
+			return err
+		}
+	} else {
+		nonceInLatest, err = nm.NonceAt(ctx, account, nil)
+		if err != nil {
+			return err
+		}
 	}
 
 	err = nm.SetNonce(account, nonceInLatest)
@@ -128,4 +139,8 @@ func (nm *SimpleManager) ResetNonce(ctx context.Context, account common.Address)
 	}
 
 	return nil
+}
+
+func (nm *SimpleManager) SetNonceAt(nonceAt NonceAtFunc) {
+	nm.NonceAt = nonceAt
 }
