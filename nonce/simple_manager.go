@@ -68,6 +68,10 @@ func (nm *SimpleManager) PendingNonceAt(ctx context.Context, account common.Addr
 		}
 	}
 
+	if nonce == 0 || nonceInLatest > nonce {
+		nonce = nonceInLatest
+	}
+
 	log.Info("pending nonce at", "account", account.Hex(), "nonce", nonce, "nonceInLatest", nonceInLatest)
 
 	err = nm.SetNonce(account, nonce+1)
