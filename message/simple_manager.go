@@ -359,7 +359,6 @@ func (c SimpleManager) newTransactionWithNonce(ctx context.Context, msg Request,
 		ethMesg := ethereum.CallMsg{
 			From:       msg.From,
 			To:         msg.To,
-			Gas:        msg.Gas,
 			GasPrice:   msg.GasPrice,
 			Value:      msg.Value,
 			Data:       msg.Data,
@@ -376,6 +375,11 @@ func (c SimpleManager) newTransactionWithNonce(ctx context.Context, msg Request,
 		} else {
 			// Multiplier 1.5
 			msg.Gas = gas * 1500 / 1000
+			// reach out max gas, then replace gas estimated with GasOnEstimationFailed
+			log.Warn("reach out max gas, then replace gas estimated with GasOnEstimationFailed", "msgId", msg.Id().Hex())
+			if msg.GasOnEstimationFailed != nil && msg.Gas > *msg.GasOnEstimationFailed {
+				msg.Gas = *msg.GasOnEstimationFailed
+			}
 		}
 	}
 
