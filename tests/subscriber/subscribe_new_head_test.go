@@ -84,5 +84,6 @@ func testHeaderSubscriber(t *testing.T, sim *simulated.Backend) {
 
 	sub.Unsubscribe()
 
+	time.Sleep(2 * time.Second)
 	assert.Equal(t, expectedBlockNumbers, gotBlockNumbers, "wrong headers received")
 }

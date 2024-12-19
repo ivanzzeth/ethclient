@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math/big"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -11,10 +12,13 @@ import (
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/types"
+	etypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/ethereum/go-ethereum/ethclient/gethclient"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/ivanzzeth/ethclient/common/consts"
+	"github.com/ivanzzeth/ethclient/types"
 )
 
 var _ Subscriber = (*ChainSubscriber)(nil)
@@ -24,6 +28,7 @@ var _ ethereum.LogFilterer = (*ChainSubscriber)(nil)
 // ChainSubscriber implements Subscriber interface
 type ChainSubscriber struct {
 	c                                *ethclient.Client
+	geth                             *gethclient.Client
 	chainId                          *big.Int
 	retryInterval                    time.Duration
 	buffer                           int
@@ -42,7 +47,9 @@ type ChainSubscriber struct {
 }
 
 // NewChainSubscriber .
-func NewChainSubscriber(c *ethclient.Client, storage SubscriberStorage) (*ChainSubscriber, error) {
+func NewChainSubscriber(rpcCli *rpc.Client, storage SubscriberStorage) (*ChainSubscriber, error) {
+	c := ethclient.NewClient(rpcCli)
+	geth := gethclient.New(rpcCli)
 	chainId, err := c.ChainID(context.Background())
 	if err != nil {
 		return nil, err
@@ -52,6 +59,7 @@ func NewChainSubscriber(c *ethclient.Client, storage SubscriberStorage) (*ChainS
 
 	subscriber := &ChainSubscriber{
 		c:                 c,
+		geth:              geth,
 		chainId:           chainId,
 		buffer:            consts.DefaultMsgBuffer,
 		blocksPerScan:     consts.DefaultBlocksPerScan,
@@ -173,7 +181,7 @@ func (cs *ChainSubscriber) SubmitQuery(query ethereum.FilterQuery) error {
 	return nil
 }
 
-func (cs *ChainSubscriber) handleQueryLogsChannel(query ethereum.FilterQuery, ch <-chan types.Log) {
+func (cs *ChainSubscriber) handleQueryLogsChannel(query ethereum.FilterQuery, ch <-chan etypes.Log) {
 	for l := range ch {
 		err := cs.queryHandler.HandleQuery(context.Background(), NewQuery(cs.chainId, query), l)
 		if err != nil {
@@ -182,14 +190,14 @@ func (cs *ChainSubscriber) handleQueryLogsChannel(query ethereum.FilterQuery, ch
 	}
 }
 
-func (cs *ChainSubscriber) getQueryLogChannel(queryHash common.Hash) chan types.Log {
-	ch, _ := cs.globalLogsChannels.LoadOrStore(queryHash, make(chan types.Log, cs.buffer))
-	globalLogsChannel := ch.(chan types.Log)
+func (cs *ChainSubscriber) getQueryLogChannel(queryHash common.Hash) chan etypes.Log {
+	ch, _ := cs.globalLogsChannels.LoadOrStore(queryHash, make(chan etypes.Log, cs.buffer))
+	globalLogsChannel := ch.(chan etypes.Log)
 
 	return globalLogsChannel
 }
 
-func (cs *ChainSubscriber) SubscribeFilterLogs(ctx context.Context, q ethereum.FilterQuery, ch chan<- types.Log) (sub ethereum.Subscription, err error) {
+func (cs *ChainSubscriber) SubscribeFilterLogs(ctx context.Context, q ethereum.FilterQuery, ch chan<- etypes.Log) (sub ethereum.Subscription, err error) {
 	log.Debug("SubscribeFilterlogs starts", "query", q)
 
 	ctx, cancel := context.WithCancel(ctx)
@@ -199,8 +207,8 @@ func (cs *ChainSubscriber) SubscribeFilterLogs(ctx context.Context, q ethereum.F
 	return
 }
 
-func (cs *ChainSubscriber) FilterLogs(ctx context.Context, q ethereum.FilterQuery) (logs []types.Log, err error) {
-	logsChan := make(chan types.Log, cs.buffer)
+func (cs *ChainSubscriber) FilterLogs(ctx context.Context, q ethereum.FilterQuery) (logs []etypes.Log, err error) {
+	logsChan := make(chan etypes.Log, cs.buffer)
 	err = cs.FilterLogsWithChannel(ctx, q, logsChan, false, true)
 	if err != nil {
 		return nil, err
@@ -217,7 +225,7 @@ func (cs *ChainSubscriber) FilterLogs(ctx context.Context, q ethereum.FilterQuer
 
 // TODO:
 // 3. cache all of finalized historical data, e.g., blockByHash, txByHash
-func (cs *ChainSubscriber) FilterLogsWithChannel(ctx context.Context, q ethereum.FilterQuery, logsChan chan<- types.Log, watch bool, closeOnExit bool) (err error) {
+func (cs *ChainSubscriber) FilterLogsWithChannel(ctx context.Context, q ethereum.FilterQuery, logsChan chan<- etypes.Log, watch bool, closeOnExit bool) (err error) {
 	if q.BlockHash != nil {
 		logs, err := cs.c.FilterLogs(ctx, q)
 		if err != nil {
@@ -362,7 +370,7 @@ func (cs *ChainSubscriber) FilterLogsWithChannel(ctx context.Context, q ethereum
 					Addresses: q.Addresses,
 					Topics:    q.Topics,
 				}
-				var lgs []types.Log
+				var lgs []etypes.Log
 
 				reduceBlocksPerScan := false
 				if cs.storage.IsFilterLogsSupported(filterQuery) {
@@ -416,7 +424,7 @@ func (cs *ChainSubscriber) FilterLogsWithChannel(ctx context.Context, q ethereum
 					continue Scan
 				}
 
-				var latestHandledLog types.Log
+				var latestHandledLog etypes.Log
 				if useStorage {
 					latestHandledLog, err = queryStateReader.LatestLogForQuery(ctx, q)
 					if err != nil {
@@ -466,7 +474,7 @@ func (cs *ChainSubscriber) FilterLogsWithChannel(ctx context.Context, q ethereum
 					if cs.isQueryHandlerSet() && len(lgs) == 0 {
 						// Just notify latest block at which there's no logs emitted.
 						log.Debug("notify latest block at which there's no logs emitted", "latestBlock", endBlock)
-						logsChan <- types.Log{BlockNumber: endBlock}
+						logsChan <- etypes.Log{BlockNumber: endBlock}
 					} else {
 						err = queryStateWriter.SaveLatestBlockForQuery(ctx, q, endBlock)
 						if err != nil {
@@ -497,8 +505,8 @@ func (cs *ChainSubscriber) FilterLogsWithChannel(ctx context.Context, q ethereum
 }
 
 // SubscribeNewHead .
-func (cs *ChainSubscriber) SubscribeNewHead(ctx context.Context, ch chan<- *types.Header) (sub ethereum.Subscription, err error) {
-	checkChan := make(chan *types.Header)
+func (cs *ChainSubscriber) SubscribeNewHead(ctx context.Context, ch chan<- *etypes.Header) (sub ethereum.Subscription, err error) {
+	checkChan := make(chan *etypes.Header)
 	resubscribeFunc := func() (ethereum.Subscription, error) {
 		return cs.c.SubscribeNewHead(ctx, checkChan)
 	}
@@ -511,10 +519,10 @@ func (cs *ChainSubscriber) SubscribeNewHead(ctx context.Context, ch chan<- *type
 }
 
 // subscribeNewHead subscribes new header and auto reconnect if the connection lost.
-func (cs *ChainSubscriber) subscribeNewHead(ctx context.Context, fn resubscribeFunc, checkChan <-chan *types.Header, resultChan chan<- *types.Header) error {
+func (cs *ChainSubscriber) subscribeNewHead(ctx context.Context, fn resubscribeFunc, checkChan <-chan *etypes.Header, resultChan chan<- *etypes.Header) error {
 	// The goroutine for geting missing header and sending header to result channel.
 	go func() {
-		var lastHeader *types.Header
+		var lastHeader *etypes.Header
 		for {
 			select {
 			case <-ctx.Done():
@@ -582,4 +590,105 @@ func (cs *ChainSubscriber) subscribeNewHead(ctx context.Context, fn resubscribeF
 	}()
 
 	return nil
+}
+
+func (cs *ChainSubscriber) SubscribeFilterFullTransactions(ctx context.Context, filter FilterTransaction, ch chan<- *etypes.Transaction) (ethereum.Subscription, error) {
+	headerCh := make(chan *etypes.Header, cs.buffer)
+	headerSub, err := cs.SubscribeNewHead(ctx, headerCh)
+	if err != nil {
+		return nil, err
+	}
+	defer headerSub.Unsubscribe()
+
+	ctx, cancel := context.WithCancel(ctx)
+	sub := &subscription{ctx, cancel}
+
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case header := <-headerCh:
+				for {
+					block, err := cs.c.BlockByHash(ctx, header.Hash())
+					if err != nil {
+						log.Warn("SubscribeFullTransactions get block by hash failed", "err", err, "blockHash", header.Hash().Hex())
+						time.Sleep(cs.retryInterval)
+						continue
+					}
+
+					for _, tx := range block.Transactions() {
+						cs.filterTransactions(filter, tx, ch)
+					}
+					break
+				}
+			}
+		}
+	}()
+
+	return sub, nil
+}
+
+// SubscribeFullPendingTransactions subscribes to new pending transactions.
+func (cs *ChainSubscriber) SubscribeFullPendingTransactions(ctx context.Context, ch chan<- *etypes.Transaction) (*rpc.ClientSubscription, error) {
+	return cs.geth.SubscribeFullPendingTransactions(ctx, ch)
+}
+
+// SubscribePendingTransactions subscribes to new pending transaction hashes.
+func (cs *ChainSubscriber) SubscribePendingTransactions(ctx context.Context, ch chan<- common.Hash) (*rpc.ClientSubscription, error) {
+	return cs.geth.SubscribePendingTransactions(ctx, ch)
+}
+
+func (cs *ChainSubscriber) SubscribeFilterFullPendingTransactions(ctx context.Context, filter FilterTransaction, ch chan<- *etypes.Transaction) (*rpc.ClientSubscription, error) {
+	fullIncomingsCh := make(chan *etypes.Transaction, cs.buffer)
+
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case tx := <-fullIncomingsCh:
+				cs.filterTransactions(filter, tx, ch)
+			}
+		}
+	}()
+
+	return cs.geth.SubscribeFullPendingTransactions(ctx, fullIncomingsCh)
+}
+
+func (cs *ChainSubscriber) filterTransactions(filter FilterTransaction, tx *etypes.Transaction, output chan<- *etypes.Transaction) {
+	log.Debug("filterTransactions", "txHash", tx.Hash().Hex(), "filter", filter)
+	signer := etypes.LatestSignerForChainID(cs.chainId)
+	sender, err := signer.Sender(tx)
+	if err != nil {
+		log.Warn("Decode signer failed for the pending transaction", "err", err, "tx", tx)
+		return
+	}
+	log.Debug("filterTransactions sender", "txHash", tx.Hash().Hex(), "sender", sender.Hex())
+
+	filtered := false
+	if slices.Contains(filter.From, sender) {
+		filtered = true
+	}
+
+	if tx.To() != nil {
+		log.Debug("filterTransactions to", "txHash", tx.Hash().Hex(), "to", tx.To().Hex())
+		if slices.Contains(filter.To, *tx.To()) {
+			filtered = true
+		}
+	}
+
+	if len(tx.Data()) >= types.MethodSelectorLength {
+		selector := types.MethodSelector(tx.Data()[:types.MethodSelectorLength])
+		log.Debug("filterTransactions selector", "txHash", tx.Hash().Hex(), "selector", selector.Hex())
+
+		if slices.Contains(filter.MethodSelector, selector) {
+			filtered = true
+		}
+	}
+
+	if filtered {
+		log.Debug("filterTransactions filtered", "txHash", tx.Hash().Hex())
+		output <- tx
+	}
 }

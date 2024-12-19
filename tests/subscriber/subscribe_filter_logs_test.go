@@ -19,7 +19,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func Test_Subscriber(t *testing.T) {
+func Test_SubscribeFilterLogs(t *testing.T) {
 	handler := log.NewTerminalHandler(os.Stdout, true)
 	logger := log.NewLogger(handler)
 	log.SetDefault(logger)
@@ -27,10 +27,10 @@ func Test_Subscriber(t *testing.T) {
 	sim := helper.SetUpClient(t)
 	defer sim.Close()
 
-	testSubscriber(t, sim, 3)
+	testSubscribeFilterLogs(t, sim, 3)
 }
 
-func test_Subscriber_UsingRedisStorage(t *testing.T) {
+func test_SubscribeFilterLogs_UsingRedisStorage(t *testing.T) {
 	handler := log.NewTerminalHandler(os.Stdout, true)
 	logger := log.NewLogger(handler)
 	log.SetDefault(logger)
@@ -53,17 +53,17 @@ func test_Subscriber_UsingRedisStorage(t *testing.T) {
 	pool := goredis.NewPool(redisClient)
 
 	storage := subscriber.NewRedisStorage(chainId, pool)
-	subscriber, err := subscriber.NewChainSubscriber(client.Client, storage)
+	subscriber, err := subscriber.NewChainSubscriber(client.RpcClient(), storage)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	client.SetSubscriber(subscriber)
 
-	testSubscriber(t, sim, 0)
+	testSubscribeFilterLogs(t, sim, 0)
 }
 
-func testSubscriber(t *testing.T, sim *simulated.Backend, confirmations uint64) {
+func testSubscribeFilterLogs(t *testing.T, sim *simulated.Backend, confirmations uint64) {
 	client := sim.Client()
 	client.SetBlockConfirmationsOnSubscription(confirmations)
 

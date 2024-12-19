@@ -44,7 +44,7 @@ func main() {
 	pool := goredis.NewPool(redisClient)
 
 	subStorage := subscriber.NewRedisStorage(chainId, pool)
-	subscriber, err := subscriber.NewChainSubscriber(client.Client, subStorage)
+	subscriber, err := subscriber.NewChainSubscriber(client.RpcClient(), subStorage)
 	if err != nil {
 		panic(err)
 	}
