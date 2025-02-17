@@ -312,9 +312,9 @@ func (cs *ChainSubscriber) FilterLogsWithChannel(ctx context.Context, q ethereum
 			blocksPerScanToDebase := cs.currBlocksPerScan - cs.blocksPerScan
 			cs.currBlocksPerScan = cs.blocksPerScan
 			endBlock -= blocksPerScanToDebase
+		} else {
+			startBlock, endBlock = endBlock+1, endBlock+cs.currBlocksPerScan
 		}
-
-		startBlock, endBlock = endBlock+1, endBlock+cs.currBlocksPerScan
 	}
 
 	go func() {
