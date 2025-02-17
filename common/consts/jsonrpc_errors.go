@@ -97,10 +97,18 @@ func (err *JsonRpcError) ErrorData() interface{} {
 
 // Decode json rpc errors and provide additional information using abi.
 func DecodeJsonRpcError(err error, evmABI abi.ABI) error {
-	jsonErr := &JsonRpcError{Abi: evmABI, RawError: err.Error()}
+	if err == nil {
+		return nil
+	}
+	jsonErr := &JsonRpcError{
+		Abi:      evmABI,
+		RawError: err.Error(),
+	}
+
 	ec, ok := err.(rpc.Error)
 	if ok {
 		jsonErr.Code = JsonRpcErrorCode(ec.ErrorCode())
+		jsonErr.Message = ec.Error()
 	}
 
 	de, ok := err.(rpc.DataError)

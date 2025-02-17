@@ -304,6 +304,19 @@ func (cs *ChainSubscriber) FilterLogsWithChannel(ctx context.Context, q ethereum
 		}
 	}()
 
+	reduceBlocksPerScan := false
+
+	updateScan := func() {
+		if reduceBlocksPerScan {
+			reduceBlocksPerScan = false
+			blocksPerScanToDebase := cs.currBlocksPerScan - cs.blocksPerScan
+			cs.currBlocksPerScan = cs.blocksPerScan
+			endBlock -= blocksPerScanToDebase
+		}
+
+		startBlock, endBlock = endBlock+1, endBlock+cs.currBlocksPerScan
+	}
+
 	go func() {
 	Scan:
 		for {
@@ -372,7 +385,6 @@ func (cs *ChainSubscriber) FilterLogsWithChannel(ctx context.Context, q ethereum
 				}
 				var lgs []etypes.Log
 
-				reduceBlocksPerScan := false
 				if cs.storage.IsFilterLogsSupported(filterQuery) {
 					lgs, err = cs.storage.FilterLogs(ctx, filterQuery)
 				} else {
@@ -413,6 +425,7 @@ func (cs *ChainSubscriber) FilterLogsWithChannel(ctx context.Context, q ethereum
 
 						// if any error encountered, just reset currBlocksPerScan
 						if jsonRpcErr.Code != 0 {
+							log.Warn("Query filterLogs failed, so reducing blocks per scan", "err", err)
 							reduceBlocksPerScan = true
 						}
 					}
@@ -420,6 +433,7 @@ func (cs *ChainSubscriber) FilterLogsWithChannel(ctx context.Context, q ethereum
 
 				if err != nil {
 					log.Warn("Subscriber FilterLogs is waiting for retry...", "err", err, "queryHash", query.Hash())
+					updateScan()
 					time.Sleep(cs.retryInterval)
 					continue Scan
 				}
@@ -485,13 +499,7 @@ func (cs *ChainSubscriber) FilterLogsWithChannel(ctx context.Context, q ethereum
 					}
 				}
 
-				if reduceBlocksPerScan {
-					blocksPerScanToDebase := cs.currBlocksPerScan - cs.blocksPerScan
-					cs.currBlocksPerScan = cs.blocksPerScan
-					endBlock -= blocksPerScanToDebase
-				}
-
-				startBlock, endBlock = endBlock+1, endBlock+cs.currBlocksPerScan
+				updateScan()
 			}
 		}
 

@@ -8,7 +8,9 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	rawEthclient "github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/go-redsync/redsync/v4/redis/goredis/v9"
 	"github.com/ivanzzeth/ethclient/message"
@@ -28,6 +30,42 @@ func Test_SubscribeFilterLogs(t *testing.T) {
 	defer sim.Close()
 
 	testSubscribeFilterLogs(t, sim, 3)
+}
+
+func Test_SubscribeFilterLogsRealTime(t *testing.T) {
+	handler := log.NewTerminalHandler(os.Stdout, true)
+	logger := log.NewLogger(handler)
+	log.SetDefault(logger)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
+	defer cancel()
+
+	// wss://opbnb-rpc.publicnode.com
+	// ws://localhost:3005/ws/8453
+	// client, err := rawEthclient.Dial("wss://opbnb-rpc.publicnode.com")
+	client, err := rawEthclient.Dial("ws://localhost:3005/ws/8453")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Logf("dial successful")
+
+	ch := make(chan types.Log)
+	sub, err := client.SubscribeFilterLogs(ctx, ethereum.FilterQuery{
+		Addresses: []common.Address{common.HexToAddress("0x34aa5631bdad51583845e5e82e2caf6ce63ba64d")},
+	}, ch)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	defer sub.Unsubscribe()
+	go func() {
+		for l := range ch {
+			t.Logf("===> log: %v", l)
+		}
+	}()
+
+	time.Sleep(10 * time.Minute)
 }
 
 func test_SubscribeFilterLogs_UsingRedisStorage(t *testing.T) {

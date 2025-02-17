@@ -7,8 +7,10 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/core/types"
+	rawEthclient "github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/ivanzzeth/ethclient"
+
+	// "github.com/ivanzzeth/ethclient"
 	"github.com/ivanzzeth/ethclient/simulated"
 	"github.com/ivanzzeth/ethclient/tests/helper"
 	"github.com/stretchr/testify/assert"
@@ -33,7 +35,10 @@ func Test_RealHeaderSubscriber(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
 	defer cancel()
 
-	client, err := ethclient.Dial("wss://opbnb-rpc.publicnode.com")
+	// wss://opbnb-rpc.publicnode.com
+	// ws://localhost:3005/ws/8453
+	client, err := rawEthclient.Dial("wss://opbnb-rpc.publicnode.com")
+	// client, err := rawEthclient.Dial("ws://localhost:3005/ws/8453")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -41,6 +46,7 @@ func Test_RealHeaderSubscriber(t *testing.T) {
 	t.Logf("dial successful")
 
 	ch := make(chan *types.Header)
+	// sub, err := client.RawClient().SubscribeNewHead(ctx, ch)
 	sub, err := client.SubscribeNewHead(ctx, ch)
 	if err != nil {
 		t.Fatal(err)
@@ -53,7 +59,7 @@ func Test_RealHeaderSubscriber(t *testing.T) {
 		}
 	}()
 
-	time.Sleep(10 * time.Second)
+	time.Sleep(30 * time.Second)
 }
 
 func testHeaderSubscriber(t *testing.T, sim *simulated.Backend) {
