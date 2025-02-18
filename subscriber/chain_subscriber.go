@@ -307,12 +307,26 @@ func (cs *ChainSubscriber) FilterLogsWithChannel(ctx context.Context, q ethereum
 	reduceBlocksPerScan := false
 
 	updateScan := func() {
+		// startBlock=1000 endBlock=1200 currBlocksPerScan=200 blocksPerScan=10
+		// 1. If reset
+		// blocksPerScanToDebase = 190
+		// currBlocksPerScan => 200
+		// endBlock => 1200-190=1000+10 => 1010
+
+		// 2, If not reset
+		// startBlock => 1201
+		// currBlocksPerScan => 200*2 = 400
+		// endBlock => 1200+400 = 1600
 		if reduceBlocksPerScan {
 			reduceBlocksPerScan = false
 			blocksPerScanToDebase := cs.currBlocksPerScan - cs.blocksPerScan
 			cs.currBlocksPerScan = cs.blocksPerScan
 			endBlock -= blocksPerScanToDebase
 		} else {
+			cs.currBlocksPerScan *= 2
+			if cs.currBlocksPerScan > cs.maxBlocksPerScan {
+				cs.currBlocksPerScan = cs.maxBlocksPerScan
+			}
 			startBlock, endBlock = endBlock+1, endBlock+cs.currBlocksPerScan
 		}
 	}
@@ -372,7 +386,7 @@ func (cs *ChainSubscriber) FilterLogsWithChannel(ctx context.Context, q ethereum
 					endBlock = lastBlock
 				}
 
-				log.Debug("Subscriber FilterLogs starts filtering logs", "client", fmt.Sprintf("%p", cs.c), "queryHash", query.Hash(),
+				log.Info("Subscriber FilterLogs starts filtering logs", "client", fmt.Sprintf("%p", cs.c), "queryHash", query.Hash(),
 					"currBlocksPerScan", cs.currBlocksPerScan, "blocksPerScan", cs.blocksPerScan,
 					"from", startBlock, "to", endBlock, "latest", lastBlock)
 
@@ -405,10 +419,6 @@ func (cs *ChainSubscriber) FilterLogsWithChannel(ctx context.Context, q ethereum
 						So, we can adjust block range or reduce count of addresses being monitored.
 					*/
 					if err == nil {
-						cs.currBlocksPerScan *= 2
-						if cs.currBlocksPerScan > cs.maxBlocksPerScan {
-							cs.currBlocksPerScan = cs.maxBlocksPerScan
-						}
 						saveFilterLogsErr := cs.storage.SaveFilterLogs(filterQuery, lgs)
 						if saveFilterLogsErr != nil {
 							log.Error("save filter logs failed", "err", saveFilterLogsErr, "query", query)
