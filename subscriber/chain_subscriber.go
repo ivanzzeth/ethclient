@@ -435,7 +435,7 @@ func (cs *ChainSubscriber) FilterLogsWithChannel(ctx context.Context, q ethereum
 
 						// if any error encountered, just reset currBlocksPerScan
 						if jsonRpcErr.Code != 0 {
-							log.Warn("Query filterLogs failed, so reducing blocks per scan", "err", err)
+							log.Warn("Query filterLogs failed, so reducing blocks per scan", "startBlock", startBlock, "err", err)
 							reduceBlocksPerScan = true
 						}
 					}
