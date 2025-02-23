@@ -103,6 +103,9 @@ func DecodeJsonRpcError(err error, evmABI abi.ABI) error {
 	jsonErr := &JsonRpcError{
 		Abi:      evmABI,
 		RawError: err.Error(),
+		// default error for internal errors from client side
+		Code:    JsonRpcErrorCodeInternalError,
+		Message: err.Error(),
 	}
 
 	ec, ok := err.(rpc.Error)
@@ -113,10 +116,6 @@ func DecodeJsonRpcError(err error, evmABI abi.ABI) error {
 
 	de, ok := err.(rpc.DataError)
 	if ok {
-		if jsonErr.Code == 0 {
-			jsonErr.Code = JsonRpcErrorCodeInternalError // default error for internal errors from client side
-			jsonErr.Message = fmt.Sprintf("%s", de.ErrorData())
-		}
 		jsonErr.Data = de.ErrorData()
 	}
 
