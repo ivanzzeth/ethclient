@@ -8,7 +8,9 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	rawEthclient "github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/go-redsync/redsync/v4/redis/goredis/v9"
 	"github.com/ivanzzeth/ethclient/message"
@@ -19,7 +21,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func Test_Subscriber(t *testing.T) {
+func Test_SubscribeFilterLogs(t *testing.T) {
 	handler := log.NewTerminalHandler(os.Stdout, true)
 	logger := log.NewLogger(handler)
 	log.SetDefault(logger)
@@ -27,10 +29,46 @@ func Test_Subscriber(t *testing.T) {
 	sim := helper.SetUpClient(t)
 	defer sim.Close()
 
-	testSubscriber(t, sim, 3)
+	testSubscribeFilterLogs(t, sim, 3)
 }
 
-func test_Subscriber_UsingRedisStorage(t *testing.T) {
+func Test_SubscribeFilterLogsRealTime(t *testing.T) {
+	handler := log.NewTerminalHandler(os.Stdout, true)
+	logger := log.NewLogger(handler)
+	log.SetDefault(logger)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
+	defer cancel()
+
+	// wss://opbnb-rpc.publicnode.com
+	// ws://localhost:3005/ws/8453
+	// client, err := rawEthclient.Dial("wss://opbnb-rpc.publicnode.com")
+	client, err := rawEthclient.Dial("ws://localhost:3005/ws/8453")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Logf("dial successful")
+
+	ch := make(chan types.Log)
+	sub, err := client.SubscribeFilterLogs(ctx, ethereum.FilterQuery{
+		Addresses: []common.Address{common.HexToAddress("0x34aa5631bdad51583845e5e82e2caf6ce63ba64d")},
+	}, ch)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	defer sub.Unsubscribe()
+	go func() {
+		for l := range ch {
+			t.Logf("===> log: %v", l)
+		}
+	}()
+
+	time.Sleep(10 * time.Minute)
+}
+
+func test_SubscribeFilterLogs_UsingRedisStorage(t *testing.T) {
 	handler := log.NewTerminalHandler(os.Stdout, true)
 	logger := log.NewLogger(handler)
 	log.SetDefault(logger)
@@ -53,17 +91,17 @@ func test_Subscriber_UsingRedisStorage(t *testing.T) {
 	pool := goredis.NewPool(redisClient)
 
 	storage := subscriber.NewRedisStorage(chainId, pool)
-	subscriber, err := subscriber.NewChainSubscriber(client.Client, storage)
+	subscriber, err := subscriber.NewChainSubscriber(client.RpcClient(), storage)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	client.SetSubscriber(subscriber)
 
-	testSubscriber(t, sim, 0)
+	testSubscribeFilterLogs(t, sim, 0)
 }
 
-func testSubscriber(t *testing.T, sim *simulated.Backend, confirmations uint64) {
+func testSubscribeFilterLogs(t *testing.T, sim *simulated.Backend, confirmations uint64) {
 	client := sim.Client()
 	client.SetBlockConfirmationsOnSubscription(confirmations)
 
@@ -99,6 +137,9 @@ func testSubscriber(t *testing.T, sim *simulated.Backend, confirmations uint64) 
 	opts, err := client.MessageToTransactOpts(ctx, message.Request{
 		From: helper.Addr,
 	})
+	if err != nil {
+		t.Fatal(err)
+	}
 	contractCallTx, err := contract.TestFunc1(opts, arg1, arg2, arg3)
 	if err != nil {
 		t.Fatalf("TestFunc1 err: %v", err)
@@ -128,6 +169,9 @@ func testSubscriber(t *testing.T, sim *simulated.Backend, confirmations uint64) 
 	opts, err = client.MessageToTransactOpts(ctx, message.Request{
 		From: helper.Addr,
 	})
+	if err != nil {
+		t.Fatal(err)
+	}
 	contractCallTx, err = contract.TestFunc1(opts, arg1, arg2, arg3)
 	if err != nil {
 		t.Fatalf("TestFunc1 err: %v", err)
@@ -145,12 +189,13 @@ func testSubscriber(t *testing.T, sim *simulated.Backend, confirmations uint64) 
 
 	time.Sleep(10 * time.Second)
 
+	t.Log("FilterLogs...")
+
 	toBlock, err := client.BlockNumber(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	t.Log("FilterLogs...")
 	filteredLogs, err := client.FilterLogs(ctx, ethereum.FilterQuery{
 		FromBlock: big.NewInt(0).SetUint64(fromBlock),
 		ToBlock:   big.NewInt(0).SetUint64(toBlock),

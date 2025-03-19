@@ -83,7 +83,9 @@ func testCallContract(t *testing.T, sim *simulated.Backend) {
 	}
 
 	assert.True(t, ok)
-	assert.Nil(t, resp.Err)
+	if resp.Err != nil {
+		t.Fatal(resp.Err)
+	}
 
 	sim.CommitAndExpectTx(resp.Tx.Hash())
 

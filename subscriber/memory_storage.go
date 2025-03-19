@@ -8,6 +8,7 @@ import (
 
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/log"
 )
 
 var _ SubscriberStorage = (*MemoryStorage)(nil)
@@ -46,12 +47,14 @@ func (s *MemoryStorage) IsFilterLogsSupported(q ethereum.FilterQuery) bool {
 }
 
 func (s *MemoryStorage) SaveLatestBlockForQuery(ctx context.Context, query ethereum.FilterQuery, blockNum uint64) error {
+	log.Debug("SaveLatestBlockForQuery in memory", "query", query, "blockNum", blockNum)
 	s.blockMap.Store(GetQueryKey(s.chainId, query), blockNum)
 	return nil
 }
 
-func (s *MemoryStorage) SaveLatestLogForQuery(ctx context.Context, query ethereum.FilterQuery, log types.Log) error {
-	s.logMap.Store(GetQueryKey(s.chainId, query), log)
+func (s *MemoryStorage) SaveLatestLogForQuery(ctx context.Context, query ethereum.FilterQuery, l types.Log) error {
+	log.Debug("SaveLatestLogForQuery in memory", "query", query, "log", l)
+	s.logMap.Store(GetQueryKey(s.chainId, query), l)
 	return nil
 }
 

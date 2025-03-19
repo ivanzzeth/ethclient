@@ -101,7 +101,7 @@ func NewClient(c *rpc.Client) *Client {
 
 	msgManager := message.NewSimpleManager(ethc, nm, accRegistry, msgStore)
 
-	subscriber, err := subscriber.NewChainSubscriber(ethc, subscriber.NewMemoryStorage(chainId))
+	subscriber, err := subscriber.NewChainSubscriber(c, subscriber.NewMemoryStorage(chainId))
 	if err != nil {
 		panic(err)
 	}
@@ -172,6 +172,10 @@ func (c *Client) CloseSendMsg() {
 // RawClient returns underlying ethclient
 func (c *Client) RawClient() *ethclient.Client {
 	return c.Client
+}
+
+func (c *Client) RpcClient() *rpc.Client {
+	return c.rpcClient
 }
 
 func (c *Client) SetNonceManager(nm nonce.Manager) {

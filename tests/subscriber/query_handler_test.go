@@ -27,9 +27,9 @@ func Test_QueryHandler(t *testing.T) {
 	log.SetDefault(logger)
 
 	sim := helper.SetUpClient(t)
-	defer sim.Close()
 
 	test_QueryHandler(t, sim)
+	sim.Close()
 }
 
 // TODO:
@@ -62,9 +62,10 @@ func test_QueryHandler(t *testing.T, sim *simulated.Backend) {
 
 	startBlock, _ := client.BlockNumber(ctx)
 
-	err = client.SubmitQuery(ethereum.FilterQuery{
+	query := ethereum.FilterQuery{
 		FromBlock: big.NewInt(int64(startBlock)),
-	})
+	}
+	err = client.SubmitQuery(query)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -86,6 +87,22 @@ func test_QueryHandler(t *testing.T, sim *simulated.Backend) {
 	assert.Equal(t, uint64(callCount), nonceAfter-nonceBefore)
 
 	assert.Equal(t, callCount*2, int(handler.logsCounter.Load()))
+
+	latestBlock, err := handler.LatestBlockForQuery(ctx, query)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assert.Equal(t, uint64(4), latestBlock)
+
+	sim.Commit()
+
+	time.Sleep(10 * time.Second)
+
+	latestBlock, err = handler.LatestBlockForQuery(ctx, query)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assert.Equal(t, uint64(5), latestBlock)
 }
 
 func test_QueryHandlerWithMockNetworkIssue(t *testing.T) {
@@ -189,7 +206,9 @@ func (h *testQueryHandler) HandleQuery(ctx context.Context, query subscriber.Que
 		return err
 	}
 
-	h.logsCounter.Add(1)
+	if log.Address.Cmp(common.Address{}) != 0 {
+		h.logsCounter.Add(1)
+	}
 
 	return nil
 }

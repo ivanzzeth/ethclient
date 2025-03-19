@@ -115,12 +115,12 @@ func (q *Request) Copy() *Request {
 
 func (q *Request) CopyWithoutId() *Request {
 	var (
-		gasOnEstimationFailed uint64
+		gasOnEstimationFailed *uint64
 		value, gasPrice       *big.Int
 	)
 
 	if q.GasOnEstimationFailed != nil {
-		gasOnEstimationFailed = *q.GasOnEstimationFailed
+		*gasOnEstimationFailed = *q.GasOnEstimationFailed
 	}
 
 	if q.Value != nil {
@@ -136,7 +136,7 @@ func (q *Request) CopyWithoutId() *Request {
 		To:                    q.To,
 		Value:                 value,
 		Gas:                   q.Gas,
-		GasOnEstimationFailed: &gasOnEstimationFailed,
+		GasOnEstimationFailed: gasOnEstimationFailed,
 		GasPrice:              gasPrice,
 		Data:                  q.Data,
 		AccessList:            q.AccessList,

@@ -4,8 +4,6 @@ import (
 	"context"
 	"sync/atomic"
 
-	"github.com/ethereum/go-ethereum/log"
-
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ivanzzeth/ethclient/subscriber"
 )
@@ -22,8 +20,6 @@ func NewSimpleQueryHandler(storage subscriber.SubscriberStorage) *SimpleQueryHan
 }
 
 func (h *SimpleQueryHandler) HandleQuery(ctx context.Context, query subscriber.Query, l types.Log) error {
-	log.Debug("handle query", "topic", l.Topics[0], "block", l.BlockNumber, "txIndex", l.TxIndex, "index", l.Index)
-
 	err := h.SaveLatestLogForQuery(ctx, query.FilterQuery, l)
 	if err != nil {
 		return err
