@@ -87,6 +87,11 @@ func GenerateMessageIdByNonce(nonce int64) *common.Hash {
 	return &hash
 }
 
+func GenerateMessageIdByAddressAndNonce(address common.Address, nonce int64) *common.Hash {
+	hash := crypto.Keccak256Hash(append(address.Bytes(), big.NewInt(nonce).Bytes()...))
+	return &hash
+}
+
 func (m *Request) Id() common.Hash {
 	return m.id
 }
