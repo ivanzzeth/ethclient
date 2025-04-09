@@ -39,6 +39,10 @@ func NewPrivateKeySigner(key *ecdsa.PrivateKey) *PrivateKeySigner {
 		if err != nil {
 			return nil, err
 		}
+
+		// EIP-155 compatible
+		signature[64] += 27
+
 		return signature, nil
 	}
 

@@ -11,7 +11,7 @@ import (
 var _ SafeTxBuilder = &SafeTxBuilderByContract{}
 
 type SafeTxBuilder interface {
-	Build(safeTxParams ...any) (callData []byte, signatures []byte, nonce uint64, err error)
+	Build(safeTxParams SafeTxParam) (callData []byte, signatures []byte, nonce uint64, err error)
 	GetContractAddress() (common.Address, error)
 }
 
@@ -62,7 +62,14 @@ func NewSafeTxBuilderByContract(safe SafeContract, signers map[common.Address]Si
 	}, nil
 }
 
-func (builder *SafeTxBuilderByContract) Build(safeTxParams ...any) ([]byte, []byte, uint64, error) {
+func (builder *SafeTxBuilderByContract) Build(safeTxParams SafeTxParam) ([]byte, []byte, uint64, error) {
+	contractVersion, err := builder.safeContract.GetVersion()
+	if err != nil {
+		return nil, nil, 0, err
+	}
+	if safeTxParams.Version() != contractVersion {
+		return nil, nil, 0, ErrSafeParamVersionNotMatch
+	}
 
 	locker := builder.nonceStorage.NonceLockFrom(builder.safeContract.GetAddress())
 	locker.Lock()
@@ -73,7 +80,7 @@ func (builder *SafeTxBuilderByContract) Build(safeTxParams ...any) ([]byte, []by
 		return nil, nil, 0, err
 	}
 
-	safeTxHash, err := builder.safeContract.GetTransactionHash(safeNonce, safeTxParams...)
+	safeTxHash, err := builder.safeContract.GetTransactionHash(safeNonce, safeTxParams)
 	if err != nil {
 		return nil, nil, 0, err
 	}
@@ -94,7 +101,7 @@ func (builder *SafeTxBuilderByContract) Build(safeTxParams ...any) ([]byte, []by
 		signatures = append(signatures, signature...)
 	}
 
-	callData, err := builder.safeContract.EncodeExecTransactionData(signatures, safeTxParams...)
+	callData, err := builder.safeContract.EncodeExecTransactionData(signatures, safeTxParams)
 	if err != nil {
 		return nil, nil, 0, err
 	}
