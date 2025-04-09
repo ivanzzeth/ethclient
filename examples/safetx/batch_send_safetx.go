@@ -103,6 +103,7 @@ func main() {
 				}
 			}
 
+			// value is less than the balance of the contract
 			{
 				safeTxParam := gnosissafe.SafeTxParamV1_3{
 					To:             to,
