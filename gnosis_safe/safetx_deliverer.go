@@ -15,29 +15,48 @@ type SafeTxDeliverer interface {
 }
 
 type SafeTxDelivererByEthClient struct {
-	ethClient        *ethclient.Client
-	clientSendTxAddr common.Address
+	ethClient                         *ethclient.Client
+	clientSendTxAddr                  common.Address
+	addrToCaller                      map[common.Address]SafelContractCaller
+	defaultSafelContractCallerCreator SafelContractCallerCreator
 }
 
-func NewSafeTxDelivererByEthClient(ethClient *ethclient.Client, clientSendTxAddr common.Address) *SafeTxDelivererByEthClient {
-	return &SafeTxDelivererByEthClient{
-		ethClient:        ethClient,
-		clientSendTxAddr: clientSendTxAddr,
+type Option func(*SafeTxDelivererByEthClient)
+
+func SetDefaultSafelContractCallerCreator(deliverer *SafeTxDelivererByEthClient) {
+	deliverer.defaultSafelContractCallerCreator = NewDefaultSafelContractCallerCreator
+}
+
+func NewSafeTxDelivererByEthClient(ethClient *ethclient.Client, clientSendTxAddr common.Address, options []Option) SafeTxDeliverer {
+	out := &SafeTxDelivererByEthClient{
+		ethClient:                         ethClient,
+		clientSendTxAddr:                  clientSendTxAddr,
+		addrToCaller:                      make(map[common.Address]SafelContractCaller),
+		defaultSafelContractCallerCreator: NewDefaultSafelContractCallerCreator,
 	}
+
+	for _, option := range options {
+		option(out)
+	}
+	return out
 }
 
-func (deliverer *SafeTxDelivererByEthClient) Deliverer(req *message.Request, safeNonce uint64) error {
+func (deliverer *SafeTxDelivererByEthClient) Deliverer(req *message.Request, safeNonce uint64) (err error) {
 
 	if req.From != deliverer.clientSendTxAddr {
 		return errors.New("from address do not match")
 	}
 
-	safeContract, err := NewDefaultSafelContractCallerByAddress(*req.To, deliverer.ethClient.Client)
-	if err != nil {
-		return err
+	safelContractCaller, ok := deliverer.addrToCaller[*req.To]
+	if !ok {
+		safelContractCaller, err = deliverer.defaultSafelContractCallerCreator(*req.To, deliverer.ethClient.Client)
+		if err != nil {
+			return err
+		}
+		deliverer.addrToCaller[*req.To] = safelContractCaller
 	}
 
-	nonceInChain, err := safeContract.GetNonce()
+	nonceInChain, err := safelContractCaller.GetNonce()
 	if err != nil {
 		return err
 	}

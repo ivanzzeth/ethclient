@@ -71,11 +71,13 @@ func (builder *SafeTxBuilderByContract) Build(safeTxParams SafeTxParam) ([]byte,
 		return nil, nil, 0, ErrSafeParamVersionNotMatch
 	}
 
-	locker := builder.nonceStorage.NonceLockFrom(builder.safeContract.GetAddress())
+	safeContractAddr := builder.safeContract.GetAddress()
+
+	locker := builder.nonceStorage.NonceLockFrom(safeContractAddr)
 	locker.Lock()
 	defer locker.Unlock()
 
-	safeNonce, err := builder.nonceStorage.GetNonce(builder.safeContract.GetAddress())
+	safeNonce, err := builder.nonceStorage.GetNonce(safeContractAddr)
 	if err != nil {
 		return nil, nil, 0, err
 	}
@@ -106,7 +108,7 @@ func (builder *SafeTxBuilderByContract) Build(safeTxParams SafeTxParam) ([]byte,
 		return nil, nil, 0, err
 	}
 
-	err = builder.nonceStorage.SetNonce(builder.safeContract.GetAddress(), safeNonce+1)
+	err = builder.nonceStorage.SetNonce(safeContractAddr, safeNonce+1)
 	if err != nil {
 		return nil, nil, 0, err
 	}

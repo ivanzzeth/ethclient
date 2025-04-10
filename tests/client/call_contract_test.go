@@ -61,7 +61,7 @@ func testCallContract(t *testing.T, sim *simulated.Backend) {
 
 	// contract.TestFunc1(nil)
 	_, err = client.CallMsg(ctx, message.Request{
-		From: helper.Addr,
+		From: helper.Addr1,
 		To:   &contractAddr,
 		Data: data,
 	}, nil)
@@ -70,7 +70,7 @@ func testCallContract(t *testing.T, sim *simulated.Backend) {
 	}
 
 	msg := &message.Request{
-		From: helper.Addr,
+		From: helper.Addr1,
 		To:   &contractAddr,
 		Data: data,
 	}
@@ -117,7 +117,7 @@ func testContractRevert(t *testing.T, sim *simulated.Backend) {
 
 	// Send successful, but executation failed.
 	msg := &message.Request{
-		From: helper.Addr,
+		From: helper.Addr1,
 		To:   &contractAddr,
 		Data: data,
 		Gas:  210000,
@@ -152,7 +152,7 @@ func testContractRevert(t *testing.T, sim *simulated.Backend) {
 
 	// Send failed, because estimateGas faield.
 	msg = &message.Request{
-		From: helper.Addr,
+		From: helper.Addr1,
 		To:   &contractAddr,
 		Data: data,
 	}
@@ -177,7 +177,7 @@ func testContractRevert(t *testing.T, sim *simulated.Backend) {
 
 	// Call failed, because evm execution faield.
 	returnData, err := client.CallMsg(ctx, message.Request{
-		From: helper.Addr,
+		From: helper.Addr1,
 		To:   &contractAddr,
 		Data: data,
 	}, nil)
@@ -213,7 +213,7 @@ func test_CallContract_Concurrent(t *testing.T, sim *simulated.Backend) {
 			arg2 := big.NewInt(100)
 			arg3 := []byte("world")
 
-			auth, err := bind.NewKeyedTransactorWithChainID(helper.PrivateKey, chainId)
+			auth, err := bind.NewKeyedTransactorWithChainID(helper.PrivateKey1, chainId)
 			if err != nil {
 				t.Error(err)
 				return

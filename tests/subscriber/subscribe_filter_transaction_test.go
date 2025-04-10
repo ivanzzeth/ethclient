@@ -38,7 +38,7 @@ func testSubscribeFilterTransaction(t *testing.T, sim *simulated.Backend) {
 	// Deploy Test contract.
 	contractAddr, _, contract := helper.DeployTestContract(t, ctx, sim)
 
-	t.Logf("helper.Addr: %v", helper.Addr.Hex())
+	t.Logf("helper.Addr1: %v", helper.Addr1.Hex())
 
 	// Subscribe txs
 	txCh := make(chan *etypes.Transaction)
@@ -59,7 +59,7 @@ func testSubscribeFilterTransaction(t *testing.T, sim *simulated.Backend) {
 
 	// First transact.
 	opts, err := client.MessageToTransactOpts(ctx, message.Request{
-		From: helper.Addr,
+		From: helper.Addr1,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -91,7 +91,7 @@ func testSubscribeFilterTransaction(t *testing.T, sim *simulated.Backend) {
 
 	// Second transact.
 	opts, err = client.MessageToTransactOpts(ctx, message.Request{
-		From: helper.Addr,
+		From: helper.Addr1,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -109,7 +109,7 @@ func testSubscribeFilterTransaction(t *testing.T, sim *simulated.Backend) {
 
 	// Just sending regular message
 	msg := &message.Request{
-		From: helper.Addr,
+		From: helper.Addr1,
 		To:   &contractAddr,
 		Gas:  3000000,
 	}

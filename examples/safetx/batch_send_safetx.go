@@ -14,7 +14,6 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ivanzzeth/ethclient"
 	gnosissafe "github.com/ivanzzeth/ethclient/gnosis_safe"
-	safel2contract "github.com/ivanzzeth/ethclient/gnosis_safe/gnosissafel2contract/v1.3"
 	"github.com/ivanzzeth/ethclient/message"
 	"github.com/ivanzzeth/ethclient/nonce"
 )
@@ -39,11 +38,10 @@ func main() {
 		log.Crit(err.Error())
 	}
 
-	safeContractV1_3, err := safel2contract.NewSafel2contract(safeContractAddress, client.Client)
+	safeContract, err := gnosissafe.NewSafeContractVersion1_3_0(safeContractAddress, client.Client)
 	if err != nil {
 		log.Crit(err.Error())
 	}
-	safeContract := gnosissafe.NewSafeContractVersion1_3_0(safeContractAddress, safeContractV1_3)
 
 	safeOwnerKey1, _ := crypto.HexToECDSA("59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d")
 	safeOwnerKey2, _ := crypto.HexToECDSA("5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a")
@@ -61,12 +59,22 @@ func main() {
 	if err != nil {
 		log.Crit(err.Error())
 	}
-	deliverer := gnosissafe.NewSafeTxDelivererByEthClient(client, crypto.PubkeyToAddress(key.PublicKey))
+
+	locker := nonceStorage.NonceLockFrom(safeContractAddress)
+	locker.Lock()
+	startNonce, err := nonceStorage.GetNonce(safeContractAddress)
+	if err != nil {
+		log.Crit(err.Error())
+	}
+	locker.Unlock()
+
+	deliverer := gnosissafe.NewSafeTxDelivererByEthClient(client, crypto.PubkeyToAddress(key.PublicKey), nil)
 
 	to := common.HexToAddress("0xa0Ee7A142d267C1f36714E4a8F75612F20a79720")
 
+	var loopCount = 3
 	go func() {
-		for range 2 {
+		for range loopCount {
 
 			// value is greater than the balance of the contract
 			{
@@ -148,4 +156,17 @@ func main() {
 	for resp := range client.Response() {
 		fmt.Println("respInfo", "id", resp.Id, "err", resp.Err)
 	}
+
+	locker = nonceStorage.NonceLockFrom(safeContractAddress)
+	locker.Lock()
+	endNonce, err := nonceStorage.GetNonce(safeContractAddress)
+	if err != nil {
+		log.Crit(err.Error())
+	}
+	locker.Unlock()
+
+	if endNonce-startNonce != uint64(loopCount*2) {
+		log.Crit("safe nonce has mistake")
+	}
+	log.Info("safe nonce As expected!")
 }
