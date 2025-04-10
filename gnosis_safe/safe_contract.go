@@ -88,7 +88,8 @@ func (contract *SafeContractVersion1_3_0) EncodeExecTransactionData(signatures [
 		return nil, err
 	}
 
-	callData, err := safel2Abi.Pack("execTransaction", param.To, param.Value, param.Calldata, param.Operation, param.SafeTxGas, param.BaseGas, param.GasPrice, param.GasToken, param.RefundReceiver, signatures)
+	callData, err := safel2Abi.Pack("execTransaction", param.To, param.Value, param.Calldata, param.Operation,
+		param.SafeTxGas, param.BaseGas, param.GasPrice, param.GasToken, param.RefundReceiver, signatures)
 	if err != nil {
 		return nil, err
 	}

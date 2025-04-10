@@ -9,7 +9,7 @@ import (
 func TestScheduleMsg(t *testing.T) {
 	sim := helper.SetUpClient(t)
 
-	testScheduleMsg(t, sim)
+	testScheduleMsg(t, sim, true)
 }
 
 func Test_ScheduleMsg_RandomlyReverted(t *testing.T) {

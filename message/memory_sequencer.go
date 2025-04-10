@@ -52,6 +52,7 @@ func (s *MemorySequencer) PopMsg() (Request, error) {
 		return Request{}, ErrPendingChannelClosed
 	}
 	s.pendingCount.Add(-1)
+	log.Debug("Pop req from pendingReq", "req ID", req.Id())
 
 	return req, nil
 }
@@ -108,10 +109,12 @@ func (s *MemorySequencer) run() {
 	}()
 
 	for reqId := range s.dag.Pipeline() {
+		log.Debug("push req from dag", "req ID", reqId)
 		msg, err := s.msgStorage.GetMsg(reqId.(common.Hash))
 		if err == nil {
 			s.pendingCount.Add(1)
 			s.pendingReq <- *msg.Req
+			log.Debug("Insert pendingReq", "pendingCount", s.pendingCount.Add(0), "len(pendingReq)", len(s.pendingReq), "req ID", msg.Id())
 		} else {
 			log.Error("AddMsg first before using sequencer", "err", err)
 		}

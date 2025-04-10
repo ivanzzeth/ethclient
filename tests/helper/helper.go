@@ -115,7 +115,7 @@ func DeploySafeContract(t *testing.T, backend *simulated.Backend) (common.Addres
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Log("TestContract creation transaction", "txHex", txOfContractCreation.Hash().Hex(), "contract", fallbackHandlerAddr.Hex())
+	t.Log("fallbackHandler creation transaction", "txHex", txOfContractCreation.Hash().Hex(), "contract", fallbackHandlerAddr.Hex())
 
 	backend.CommitAndExpectTx(txOfContractCreation.Hash())
 
@@ -133,7 +133,8 @@ func DeploySafeContract(t *testing.T, backend *simulated.Backend) (common.Addres
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Log("TestContract creation transaction", "txHex", txOfContractCreation.Hash().Hex(), "contract", singletonAddr.Hex())
+	log.Debug("safe contract creation transaction", "txHex", txOfContractCreation.Hash().Hex())
+	//t.Log("TestContract creation transaction", "txHex", txOfContractCreation.Hash().Hex(), "contract", singletonAddr.Hex())
 
 	backend.CommitAndExpectTx(txOfContractCreation.Hash())
 
@@ -151,6 +152,7 @@ func DeploySafeContract(t *testing.T, backend *simulated.Backend) (common.Addres
 	if err != nil {
 		t.Fatal(err)
 	}
+	log.Debug("safe proxy contract creation transaction", "txHex", txOfContractCreation.Hash().Hex())
 	t.Log("TestContract creation transaction", "txHex", txOfContractCreation.Hash().Hex(), "contract", singletonAddr.Hex())
 
 	backend.CommitAndExpectTx(txOfContractCreation.Hash())

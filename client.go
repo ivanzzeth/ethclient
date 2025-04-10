@@ -402,6 +402,8 @@ func (c *Client) broadcast(ctx context.Context) {
 			var err error
 
 			msg, err := c.msgSequencer.PopMsg()
+			log.Debug("pop Msg in broadcast", "ID", msg.Id())
+
 			if err != nil {
 				if errors.Is(err, message.ErrPendingChannelClosed) {
 					log.Debug("close responseChannel...")
@@ -419,7 +421,9 @@ func (c *Client) broadcast(ctx context.Context) {
 				log.Debug("Client.broadcast UpdateResponse", "resp", resp, "msgId", msg.Id())
 
 				c.msgStore.UpdateResponse(resp.Id, resp)
-				c.respChannel <- resp
+				//c.respChannel <- resp
+				log.Debug("Client.broadcast UpdateResponse done", "resp", resp, "msgId", msg.Id())
+
 			}()
 
 			if msg.SimulationOn {
