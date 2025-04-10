@@ -21,4 +21,7 @@ type StorageWriter interface {
 	UpdateResponse(msgId common.Hash, resp Response) error
 	UpdateReceipt(msgId common.Hash, receipt Receipt) error
 	UpdateMsgStatus(msgId common.Hash, status MessageStatus) error
+
+	// MsgInflightQueue() queue.Queue
+	// MsgOnChainQueue() queue.Queue
 }
