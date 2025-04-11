@@ -268,16 +268,13 @@ func (c *Client) schedule() {
 				panic(fmt.Errorf("no msgId provided"))
 			}
 
-			if c.msgStore.HasMsg(req.Id()) {
-				resp.Err = fmt.Errorf("already known")
-				return
-			}
-
-			// message.MessageStatusSubmitted
-			err = c.msgStore.AddMsg(req)
-			if err != nil {
-				err = fmt.Errorf("no msgId provided: %v", err)
-				return
+			if !c.msgStore.HasMsg(req.Id()) {
+				// message.MessageStatusSubmitted
+				err = c.msgStore.AddMsg(req)
+				if err != nil {
+					err = fmt.Errorf("no msgId provided: %v", err)
+					return
+				}
 			}
 
 			msg, err := c.msgStore.GetMsg(req.Id())
