@@ -120,7 +120,8 @@ func (q *Request) CopyWithoutId() *Request {
 	)
 
 	if q.GasOnEstimationFailed != nil {
-		*gasOnEstimationFailed = *q.GasOnEstimationFailed
+		gas := *q.GasOnEstimationFailed
+		gasOnEstimationFailed = &gas
 	}
 
 	if q.Value != nil {
