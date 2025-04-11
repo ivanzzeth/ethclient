@@ -265,22 +265,23 @@ func (c *Client) schedule() {
 			}()
 
 			if req.Id() == common.BytesToHash([]byte{}) {
-				err = fmt.Errorf("no msgId provided")
+				panic(fmt.Errorf("no msgId provided"))
+			}
+
+			if c.msgStore.HasMsg(req.Id()) {
+				resp.Err = fmt.Errorf("already known")
 				return
 			}
 
-			if !c.msgStore.HasMsg(req.Id()) {
-				// message.MessageStatusSubmitted
-				err = c.msgStore.AddMsg(req)
-				if err != nil {
-					err = fmt.Errorf("no msgId provided: %v", err)
-					return
-				}
+			// message.MessageStatusSubmitted
+			err = c.msgStore.AddMsg(req)
+			if err != nil {
+				err = fmt.Errorf("no msgId provided: %v", err)
+				return
 			}
 
 			msg, err := c.msgStore.GetMsg(req.Id())
 			if err != nil {
-				log.Error("msg not found", "msg id", req.Id())
 				return
 			}
 
@@ -292,24 +293,21 @@ func (c *Client) schedule() {
 				}
 				err = c.msgStore.UpdateMsg(msg)
 				if err != nil {
-					log.Error("update msg fail", "err", err)
 					return
 				}
 			}
 
 			if msg.Req.ExpirationTime != 0 && msg.Req.ExpirationTime < now {
 				// timeout
-				err = c.msgStore.UpdateMsgStatus(msg.Req.Id(), message.MessageStatusExpired)
+				err = c.msgStore.UpdateMsgStatus(req.Id(), message.MessageStatusExpired)
 				if err != nil {
-					log.Error("update msg status fail", "err", err)
 					return
 				}
 
 				err = fmt.Errorf("timeout")
-				return
 			}
 
-			//req = *msg.Req
+			req = *msg.Req
 
 			if msg.Req.StartTime >= now {
 				log.Debug("scheduler found it's not time for executing the msg", "msg", msg.Id().Hex())
@@ -323,22 +321,20 @@ func (c *Client) schedule() {
 
 			c.scheduleChannel <- *msg.Req
 
-			err = c.msgStore.UpdateMsgStatus(msg.Req.Id(), message.MessageStatusScheduled)
+			err = c.msgStore.UpdateMsgStatus(req.Id(), message.MessageStatusScheduled)
 			if err != nil {
-				log.Error("update msg status fail", "err", err)
+				err = fmt.Errorf("no msgId provided")
 				return
 			}
 
 			if msg.Req.Interval != 0 {
-				newReq := msg.Req.CopyWithoutId()
+				newReq := req.CopyWithoutId()
 
 				newReq.AfterMsg = nil
 				newReq.StartTime = now + int64(req.Interval)
 
 				message.AssignMessageId(newReq)
 				log.Debug("scheduler creates new one for long-term ticker task", "msg", msg.Id().Hex(), "new_msg", newReq.Id().Hex())
-
-				resp.Id = newReq.Id()
 
 				err = c.msgStore.AddMsg(*newReq)
 				if err != nil {
@@ -347,6 +343,7 @@ func (c *Client) schedule() {
 
 				newMsg, err := c.msgStore.GetMsg(newReq.Id())
 				if err != nil {
+					resp.Id = newReq.Id()
 					return
 				}
 				parent := req.Id()
@@ -359,6 +356,7 @@ func (c *Client) schedule() {
 
 				err = c.msgStore.UpdateMsg(newMsg)
 				if err != nil {
+					resp.Id = newReq.Id()
 					return
 				}
 
@@ -375,17 +373,25 @@ func (c *Client) sequence() {
 	for msg := range c.scheduleChannel {
 		log.Debug("sequence msg...", "msg", msg)
 		func() {
-			err := c.msgSequencer.PushMsg(msg)
+			var err error
+			var resp message.Response
+			resp.Id = msg.Id()
+			defer func() {
+				if err != nil {
+					log.Debug("Client.sequence UpdateResponse", "resp", resp)
+
+					resp.Err = err
+					c.msgStore.UpdateResponse(resp.Id, resp)
+					c.respChannel <- resp
+				}
+			}()
+			err = c.msgSequencer.PushMsg(msg)
 			if err != nil {
-				log.Error("push msg fail", "err", err)
-				c.scheduleChannel <- *msg.Copy()
 				return
 			}
 
 			err = c.msgStore.UpdateMsgStatus(msg.Id(), message.MessageStatusQueued)
 			if err != nil {
-				log.Error("update msg status fail", "err", err)
-				// todo: There is no guarantee of atomicity here
 				return
 			}
 		}()
@@ -402,8 +408,6 @@ func (c *Client) broadcast(ctx context.Context) {
 			var err error
 
 			msg, err := c.msgSequencer.PopMsg()
-			log.Debug("pop Msg in broadcast", "ID", msg.Id())
-
 			if err != nil {
 				if errors.Is(err, message.ErrPendingChannelClosed) {
 					log.Debug("close responseChannel...")
@@ -421,9 +425,7 @@ func (c *Client) broadcast(ctx context.Context) {
 				log.Debug("Client.broadcast UpdateResponse", "resp", resp, "msgId", msg.Id())
 
 				c.msgStore.UpdateResponse(resp.Id, resp)
-				//c.respChannel <- resp
-				log.Debug("Client.broadcast UpdateResponse done", "resp", resp, "msgId", msg.Id())
-
+				c.respChannel <- resp
 			}()
 
 			if msg.SimulationOn {

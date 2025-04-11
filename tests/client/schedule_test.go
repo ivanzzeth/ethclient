@@ -51,22 +51,29 @@ func test_ScheduleMsg_RandomlyReverted_WithRedis(t *testing.T) {
 	test_ScheduleMsg_RandomlyReverted(t, sim)
 }
 
-func testScheduleMsg(t *testing.T, sim *simulated.Backend) {
+func testScheduleMsg(t *testing.T, sim *simulated.Backend, concurrent bool) {
 	client := sim.Client()
 	buffer := 3
 	go func() {
 		for i := 0; i < buffer; i++ {
-			to := common.HexToAddress("0x06514D014e997bcd4A9381bF0C4Dc21bD32718D4")
-			req := &message.Request{
-				From: helper.Addr1,
-				To:   &to,
+			schedule := func() {
+				to := common.HexToAddress("0x06514D014e997bcd4A9381bF0C4Dc21bD32718D4")
+				req := &message.Request{
+					From: helper.Addr1,
+					To:   &to,
+				}
+
+				message.AssignMessageId(req)
+
+				t.Logf("ScheduleMsg#%v", i)
+				client.ScheduleMsg(req)
+				t.Log("Write MSG to channel")
 			}
-
-			message.AssignMessageId(req)
-
-			t.Logf("ScheduleMsg#%v", i)
-			client.ScheduleMsg(req)
-			t.Log("Write MSG to channel")
+			if concurrent {
+				go schedule()
+			} else {
+				schedule()
+			}
 		}
 
 		time.Sleep(10 * time.Second)

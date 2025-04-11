@@ -45,7 +45,7 @@ func TestSafeTxDelivererByEthClient(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	time.Sleep(10 * time.Second)
+	time.Sleep(5 * time.Second)
 
 	getReq1, err := sim.Client().GetMsg(req1.Id())
 	if err != nil {
@@ -65,6 +65,11 @@ func TestSafeTxDelivererByEthClient(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
+	safeNonceBefor, err := safeContractV1_3.GetNonce()
+	if err != nil {
+		t.Error(err)
+	}
+	log.Debug("safeNonceBefoe", "safe", safeNonceBefor)
 
 	builder, err := NewSafeTxBuilderByContract(safeContractV1_3, signers, nonceStorage)
 	if err != nil {
@@ -84,7 +89,7 @@ func TestSafeTxDelivererByEthClient(t *testing.T) {
 				Operation:      0,
 				SafeTxGas:      big.NewInt(32000),
 				BaseGas:        big.NewInt(50000),
-				GasPrice:       big.NewInt(2000),
+				GasPrice:       big.NewInt(2000000000),
 				GasToken:       common.HexToAddress("0x00"),
 				RefundReceiver: common.HexToAddress("0x00"),
 			}
@@ -94,8 +99,8 @@ func TestSafeTxDelivererByEthClient(t *testing.T) {
 				t.Error(err)
 			}
 			req2 := &message.Request{From: helper.Addr1, To: &safeAddr, Data: callData, Value: big.NewInt(0),
-				Gas:      500000,
-				GasPrice: big.NewInt(3000)}
+				Gas:      5000000,
+				GasPrice: big.NewInt(3000000000)}
 			req2.SetId(*message.GenerateMessageIdByAddressAndNonce(safeAddr, int64(nonce)))
 			log.Debug("safe nonce from builder", "nonce", nonce, "MSGID", req2.Id())
 			err = deliverer.Deliver(req2, nonce)
@@ -133,32 +138,6 @@ func TestSafeTxDelivererByEthClient(t *testing.T) {
 			log.Debug("safe nonce last", "safe nonce last", safeNonceLast, "index", index)
 			wg.Done()
 			log.Debug("done after", "index", index)
-
-			// _, isPending, err := sim.Client().TransactionByHash(context.Background(), resp.Tx.Hash())
-			// if err != nil {
-			// 	log.Crit("get tx by hash failed", index)
-			// }
-			// log.Info("isPending", "isPending", isPending)
-			// if isPending {
-			// 	time.Sleep(time.Duration(int64(rand.Int31n(5)) * int64(time.Second)))
-			// 	_, isPending, err := sim.Client().TransactionByHash(context.Background(), resp.Tx.Hash())
-			// 	if err != nil {
-			// 		sim.CommitAndExpectTx(resp.Tx.Hash())
-			// 		//log.Crit("get tx by hash failed 2", "index", index)
-			// 	}
-			// 	if isPending {
-
-			// 	}
-			// }
-
-			//sim.Commit()
-			// recepit, contains := sim.Client().WaitMsgReceipt(getReq2.Id(), 0, 5*time.Second)
-			// if !contains {
-			// 	//log.Crit("tx2 failed", index)
-			// 	goto flag
-			// }
-			// log.Debug("recepit for req", "req ID", getReq2.Req.Id(), "recepit", recepit)
-
 		}
 		ff(i)
 	}
@@ -180,15 +159,15 @@ func TestSafeTxDelivererByEthClient(t *testing.T) {
 
 	}()
 
-	//go func() {
-	for res := range sim.Client().Response() {
-		sim.Commit()
-		log.Debug("resp after send", "resp", res)
-	}
-	//}()
+	go func() {
+		for res := range sim.Client().Response() {
+			sim.Commit()
+			log.Debug("resp after send", "resp", res)
+		}
+	}()
 	log.Debug("wait after")
 	wg.Wait()
-	//time.Sleep(10 * time.Second)
+	time.Sleep(10 * time.Second)
 
 	req3 := &message.Request{From: helper.Addr1, To: &safeAddr}
 	req3 = message.AssignMessageId(req3)
@@ -200,4 +179,12 @@ func TestSafeTxDelivererByEthClient(t *testing.T) {
 	req4 = message.AssignMessageId(req4)
 	err = deliverer.Deliver(req4, safeNonce.Uint64()+100)
 	assert.Equal(t, "from address do not match", err.Error())
+
+	endSafeNonce, err := safeContractV1_3.GetNonce()
+	if err != nil {
+		t.Error(err)
+	}
+	log.Debug("endNonce", "safe", endSafeNonce)
+
+	assert.Equal(t, uint64(3), uint64(uint64(endSafeNonce)-safeNonce.Uint64()))
 }

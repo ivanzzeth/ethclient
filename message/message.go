@@ -46,7 +46,7 @@ type Request struct {
 type MessageStatus uint8
 
 const (
-	MessageStatusSubmitted MessageStatus = iota
+	MessageStatusSubmitted MessageStatus = iota + 1
 	MessageStatusScheduled
 	MessageStatusQueued
 	MessageStatusNonceAssigned
@@ -125,7 +125,8 @@ func (q *Request) CopyWithoutId() *Request {
 	)
 
 	if q.GasOnEstimationFailed != nil {
-		*gasOnEstimationFailed = *q.GasOnEstimationFailed
+		gas := *q.GasOnEstimationFailed
+		gasOnEstimationFailed = &gas
 	}
 
 	if q.Value != nil {

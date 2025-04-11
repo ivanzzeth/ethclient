@@ -9,6 +9,12 @@ import (
 func TestScheduleMsg(t *testing.T) {
 	sim := helper.SetUpClient(t)
 
+	testScheduleMsg(t, sim, false)
+}
+
+func TestScheduleMsgConcurrent(t *testing.T) {
+	sim := helper.SetUpClient(t)
+
 	testScheduleMsg(t, sim, true)
 }
 
