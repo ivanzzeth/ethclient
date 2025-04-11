@@ -45,7 +45,7 @@ func TestSafeTxDelivererByEthClient(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	time.Sleep(5 * time.Second)
+	time.Sleep(2 * time.Second)
 
 	getReq1, err := sim.Client().GetMsg(req1.Id())
 	if err != nil {
@@ -107,7 +107,7 @@ func TestSafeTxDelivererByEthClient(t *testing.T) {
 			if err != nil {
 				t.Error(err)
 			}
-			time.Sleep(5 * time.Second)
+			time.Sleep(3 * time.Second)
 
 			getReq2, err := sim.Client().GetMsg(req2.Id())
 			if err != nil {
@@ -167,7 +167,7 @@ func TestSafeTxDelivererByEthClient(t *testing.T) {
 	}()
 	log.Debug("wait after")
 	wg.Wait()
-	time.Sleep(10 * time.Second)
+	time.Sleep(5 * time.Second)
 
 	req3 := &message.Request{From: helper.Addr1, To: &safeAddr}
 	req3 = message.AssignMessageId(req3)
