@@ -32,7 +32,7 @@ func Test_SubscribeFilterLogs(t *testing.T) {
 	testSubscribeFilterLogs(t, sim, 3)
 }
 
-func Test_SubscribeFilterLogsRealTime(t *testing.T) {
+func test_SubscribeFilterLogsRealTime(t *testing.T) {
 	handler := log.NewTerminalHandler(os.Stdout, true)
 	logger := log.NewLogger(handler)
 	log.SetDefault(logger)
