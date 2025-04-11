@@ -46,7 +46,7 @@ type Request struct {
 type MessageStatus uint8
 
 const (
-	MessageStatusSubmitted MessageStatus = iota
+	MessageStatusSubmitted MessageStatus = iota + 1
 	MessageStatusScheduled
 	MessageStatusQueued
 	MessageStatusNonceAssigned
