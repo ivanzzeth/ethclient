@@ -1,7 +1,6 @@
 package message
 
 import (
-	"context"
 	"errors"
 	"sync/atomic"
 
@@ -81,27 +80,14 @@ func (s *MemorySequencer) run() {
 			if req.AfterMsg == nil {
 				s.dag.AddVertex(req.Id())
 			} else {
-				handled := false
-				if s.client != nil {
-					tx, isPending, getTxErr := s.client.TransactionByHash(context.Background(), *req.AfterMsg)
-					if getTxErr == nil && !isPending {
-						log.Debug("tx was found, so push msg to dag", "reqId", req.Id().Hex(),
-							"tx", tx.Hash().Hex(), "is_pending", isPending)
-						s.dag.AddVertex(req.Id())
-						handled = true
-					}
-				}
-
-				if !handled {
-					_, err := s.msgStorage.GetMsg(*req.AfterMsg)
-					if err == nil {
-						s.dag.AddEdge(*req.AfterMsg, req.Id())
-					} else {
-						// after message not ready, so push back
-						log.Debug("after message not ready, so push back", "reqId", req.Id().Hex())
-						s.queuedCount.Add(1)
-						s.queuedReq <- req
-					}
+				_, err := s.msgStorage.GetMsg(*req.AfterMsg)
+				if err == nil {
+					s.dag.AddEdge(*req.AfterMsg, req.Id())
+				} else {
+					// after message not ready, so push back
+					log.Debug("after message not ready, so push back", "reqId", req.Id().Hex())
+					s.queuedCount.Add(1)
+					s.queuedReq <- req
 				}
 			}
 		}
@@ -109,11 +95,17 @@ func (s *MemorySequencer) run() {
 
 	for reqId := range s.dag.Pipeline() {
 		msg, err := s.msgStorage.GetMsg(reqId.(common.Hash))
-		if err == nil {
-			s.pendingCount.Add(1)
-			s.pendingReq <- *msg.Req
-		} else {
+		if err != nil {
 			log.Error("AddMsg first before using sequencer", "err", err)
+			continue
 		}
+
+		if msg.Resp != nil {
+			log.Debug("msg already responded", "msgId", msg.Id().Hex())
+			continue
+		}
+
+		s.pendingCount.Add(1)
+		s.pendingReq <- *msg.Req
 	}
 }
