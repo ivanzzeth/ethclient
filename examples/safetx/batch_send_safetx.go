@@ -74,7 +74,7 @@ func main() {
 	}
 	locker.Unlock()
 
-	deliverer := gnosissafe.NewSafeTxDelivererByEthClient(client, crypto.PubkeyToAddress(key.PublicKey), nil)
+	deliverer := gnosissafe.NewSafeTxDelivererByEthClient(client, crypto.PubkeyToAddress(key.PublicKey))
 
 	to := common.HexToAddress("0xa0Ee7A142d267C1f36714E4a8F75612F20a79720")
 

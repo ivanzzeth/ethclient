@@ -23,13 +23,24 @@ type SafeTxDelivererByEthClient struct {
 	defaultSafelContractCallerCreator SafelContractCallerCreator
 }
 
-type Option func(*SafeTxDelivererByEthClient)
-
-func SetDefaultSafelContractCallerCreator(deliverer *SafeTxDelivererByEthClient) {
-	deliverer.defaultSafelContractCallerCreator = NewDefaultSafelContractCallerCreator
+type DelivererByEthClientOption interface {
+	apply(*SafeTxDelivererByEthClient)
 }
 
-func NewSafeTxDelivererByEthClient(ethClient *ethclient.Client, clientSendTxAddr common.Address, options []Option) SafeTxDeliverer {
+type optionFunc func(*SafeTxDelivererByEthClient)
+
+func (f optionFunc) apply(deliverer *SafeTxDelivererByEthClient) {
+	f(deliverer)
+}
+
+func WithDefaultSafelContractCallerCreator(creator SafelContractCallerCreator) optionFunc {
+
+	return func(deliverer *SafeTxDelivererByEthClient) {
+		deliverer.defaultSafelContractCallerCreator = creator
+	}
+}
+
+func NewSafeTxDelivererByEthClient(ethClient *ethclient.Client, clientSendTxAddr common.Address, options ...DelivererByEthClientOption) SafeTxDeliverer {
 	out := &SafeTxDelivererByEthClient{
 		ethClient:                         ethClient,
 		clientSendTxAddr:                  clientSendTxAddr,
@@ -37,7 +48,7 @@ func NewSafeTxDelivererByEthClient(ethClient *ethclient.Client, clientSendTxAddr
 	}
 
 	for _, option := range options {
-		option(out)
+		option.apply(out)
 	}
 	return out
 }
