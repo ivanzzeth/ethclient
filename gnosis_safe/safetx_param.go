@@ -8,6 +8,8 @@ import (
 
 var _ SafeTxParam = &SafeTxParamV1_3{}
 
+// SafeTxParam contains parameters for a specific Safe contract call.
+// TODO: Add IsValid() method for integrity checks.
 type SafeTxParam interface {
 	Version() string
 }

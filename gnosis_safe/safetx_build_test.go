@@ -8,16 +8,13 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ivanzzeth/ethclient/nonce"
+	"github.com/ivanzzeth/ethclient/tests/helper"
 	"github.com/stretchr/testify/assert"
 )
 
 func TestSafeTxBuilderByContract(t *testing.T) {
 
-	safeOwnerKey1, _ := crypto.HexToECDSA("59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d")
-	safeOwnerKey2, _ := crypto.HexToECDSA("5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a")
-	safeOwnerKey3, _ := crypto.HexToECDSA("7c852118294e51e653712a81e05800f419141751be58f605c371e15141b007a6")
-
-	safeOwnerKeys := []*ecdsa.PrivateKey{safeOwnerKey1, safeOwnerKey2, safeOwnerKey3}
+	safeOwnerKeys := []*ecdsa.PrivateKey{helper.PrivateKey1, helper.PrivateKey2, helper.PrivateKey3}
 	sortAddresses := make([]common.Address, 0, 3)
 	signers := make(map[common.Address]Signer)
 	for _, ownerKey := range safeOwnerKeys {

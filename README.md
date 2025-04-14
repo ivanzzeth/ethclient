@@ -11,6 +11,7 @@ golang
 - [x] Sequence message
 - [x] Protect message
 - [x] Nonce management
+- [x] Concurrent Transaction in Safe Multisig Wallets
 - [ ] Multiple rpc url supported
 
 ## Quick Start
@@ -60,6 +61,42 @@ func main() {
 
 	for resp := range client.Response() {
 		fmt.Println("execution resp: ", resp)
+	}
+}
+
+```
+
+## Concurrent Transaction Management in Safe Multisig Wallets 
+The Safe multisig contract also uses a nonce.
+Our solution manages this nonce off-chain.
+Now you can submit multiple transactions at once - no need to wait for confirmations.
+
+The current implementation uses Safe v1.3, but you can build your own for different Safe contract versions.
+```go
+func BatchSendSafeTx(from common.Address, builder gnosissafe.SafeTxBuilder, deliverer gnosissafe.SafeTxDeliverer, params []gnosissafe.SafeTxParam) {
+
+	safeContractAddress, _ := builder.GetContractAddress()
+
+	for _, param := range params {
+		callData, _, safeNonce, err := builder.Build(param)
+		if err != nil {
+			// Handle error
+			return
+		}
+
+		req := message.Request{
+			From:     from,
+			To:       &safeContractAddress,
+			Value:    big.NewInt(0),
+			Gas:      500000, // Estimated gas can be used.
+			GasPrice: big.NewInt(3000),
+			Data:     callData,
+		}
+		err = deliverer.Deliver(&req, safeNonce)
+		if err != nil {
+			// Handle error
+			return
+		}
 	}
 }
 

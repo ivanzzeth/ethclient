@@ -21,7 +21,7 @@ import (
 func TestSafeTxDelivererByEthClient(t *testing.T) {
 	sim := helper.SetUpClient(t)
 
-	deliverer := NewSafeTxDelivererByEthClient(sim.Client(), helper.Addr1, nil)
+	deliverer := NewSafeTxDelivererByEthClient(sim.Client(), helper.Addr1)
 
 	safeAddr, safeContract := helper.DeploySafeContract(t, sim)
 
@@ -80,7 +80,7 @@ func TestSafeTxDelivererByEthClient(t *testing.T) {
 	wg.Add(3)
 
 	for i := range 3 {
-		ff := func(index int) {
+		f := func(index int) {
 
 			param := &SafeTxParamV1_3{
 				To:             common.HexToAddress("0xa0Ee7A142d267C1f36714E4a8F75612F20a79720"),
@@ -139,14 +139,13 @@ func TestSafeTxDelivererByEthClient(t *testing.T) {
 			wg.Done()
 			log.Debug("done after", "index", index)
 		}
-		ff(i)
+		f(i)
 	}
 
 	go func() {
 		for i := 0; i < 100; i++ {
 			block, err := sim.Client().BlockByNumber(context.Background(), big.NewInt(int64(i)))
 			if err != nil {
-				//log.Error(err.Error())
 				i = i - 1
 				time.Sleep(time.Duration(i * int(time.Second)))
 

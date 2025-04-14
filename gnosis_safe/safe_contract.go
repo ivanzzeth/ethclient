@@ -14,11 +14,14 @@ var _ SafelContractCaller = &SafeContractVersion1_3_0{}
 
 var ErrSafeParamVersionNotMatch = errors.New("safe param version do not match")
 
+// SafeContract is an abstraction of Safe implementations. Different versions can have different implementations.
 type SafeContract interface {
 	SafelContractCaller
+	// EncodeExecTransactionData generates calldata for Safe's execTransaction call.
 	EncodeExecTransactionData(signatures []byte, txParams SafeTxParam) ([]byte, error)
 }
 
+// SafelContractCaller read-only operations for Safe contracts.
 type SafelContractCaller interface {
 	GetNonce() (uint64, error)
 	GetThreshold() (uint64, error)
@@ -29,6 +32,7 @@ type SafelContractCaller interface {
 	EncodeTransactionData(nonce uint64, txParams SafeTxParam) ([]byte, error)
 }
 
+// SafelContractCallerCreator generates a SafeContractCaller instance based on the provided contract address and backend service.
 type SafelContractCallerCreator func(address common.Address, backend bind.ContractBackend) (SafelContractCaller, error)
 
 type SafeContractVersion1_3_0 struct {

@@ -12,6 +12,7 @@ import (
 
 var _ SafeTxDeliverer = &SafeTxDelivererByEthClient{}
 
+// SafeTxDeliverer dispatches requests to the underlying layer, where each request wraps a call to Safe's execTransaction.
 type SafeTxDeliverer interface {
 	Deliver(req *message.Request, safeNonce uint64) error
 }

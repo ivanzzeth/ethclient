@@ -25,7 +25,8 @@ func main() {
 	logger := log.NewLogger(handler)
 	log.SetDefault(logger)
 
-	key, _ := crypto.HexToECDSA("ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80")
+	// TODO: This address should be replaced with your deployed Safe Proxy contract address.
+	// The owner addresses of the test contract include helper.Addr1, helper.Addr2, helper.Addr3, and helper.Addr4, with a threshold of 3.
 	safeContractAddress := common.HexToAddress("0xc582Bc0317dbb0908203541971a358c44b1F3766")
 
 	client, err := ethclient.Dial("http://localhost:8545")
@@ -34,7 +35,7 @@ func main() {
 	}
 	defer client.Close()
 
-	err = client.RegisterPrivateKey(context.Background(), key)
+	err = client.RegisterPrivateKey(context.Background(), helper.PrivateKey1)
 	if err != nil {
 		log.Crit(err.Error())
 	}
@@ -47,13 +48,9 @@ func main() {
 	if err != nil {
 		log.Crit("nonce has err")
 	}
-	log.Debug("safe nonce start in chain", "nonce", startNonceInChain)
+	log.Debug("safe nonce in chain for start", "nonce", startNonceInChain)
 
-	safeOwnerKey1, _ := crypto.HexToECDSA("59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d")
-	safeOwnerKey2, _ := crypto.HexToECDSA("5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a")
-	safeOwnerKey3, _ := crypto.HexToECDSA("7c852118294e51e653712a81e05800f419141751be58f605c371e15141b007a6")
-
-	safeOwnerKeys := []*ecdsa.PrivateKey{safeOwnerKey1, safeOwnerKey2, safeOwnerKey3}
+	safeOwnerKeys := []*ecdsa.PrivateKey{helper.PrivateKey2, helper.PrivateKey3, helper.PrivateKey4}
 
 	signers := make(map[common.Address]gnosissafe.Signer)
 	for _, ownerKey := range safeOwnerKeys {
@@ -74,7 +71,7 @@ func main() {
 	}
 	locker.Unlock()
 
-	deliverer := gnosissafe.NewSafeTxDelivererByEthClient(client, crypto.PubkeyToAddress(key.PublicKey))
+	deliverer := gnosissafe.NewSafeTxDelivererByEthClient(client, helper.Addr1)
 
 	to := common.HexToAddress("0xa0Ee7A142d267C1f36714E4a8F75612F20a79720")
 
@@ -84,7 +81,8 @@ func main() {
 		for range loopCount {
 			go func() {
 
-				// value is greater than the balance of the contract
+				// value is greater than the balance of the contract.
+				// this transaction will fail to execute, as the transfer amount exceeds the available balance in the contract address.
 				{
 					safeTxParam := gnosissafe.SafeTxParamV1_3{
 						To:             to,
@@ -105,7 +103,7 @@ func main() {
 					log.Info("safe nonce value", "int", safeNonce)
 
 					req := message.Request{
-						From:     crypto.PubkeyToAddress(key.PublicKey),
+						From:     helper.Addr1,
 						To:       &safeContractAddress,
 						Value:    big.NewInt(0),
 						Gas:      500000,
@@ -119,7 +117,8 @@ func main() {
 					}
 				}
 
-				// value is less than the balance of the contract
+				// value is less than the balance of the contract.
+				// this transaction is expected to execute successfully on-chain.
 				{
 					safeTxParam := gnosissafe.SafeTxParamV1_3{
 						To:             to,
@@ -140,7 +139,7 @@ func main() {
 					log.Info("safe nonce value", "int", safeNonce)
 
 					req := message.Request{
-						From:     crypto.PubkeyToAddress(key.PublicKey),
+						From:     helper.Addr1,
 						To:       &safeContractAddress,
 						Value:    big.NewInt(0),
 						Gas:      500000,
@@ -177,15 +176,13 @@ func main() {
 	if endNonce-startNonce != uint64(loopCount*2) {
 		log.Crit("safe nonce has mistake")
 	}
+	log.Info("safe nonce As expected!")
 
 	endNonceInChain, err := safeContract.GetNonce()
 	if err != nil {
 		log.Crit("nonce has err")
 	}
-
-	log.Debug("safe nonce end in chain", "nonce", endNonceInChain)
-
-	log.Info("safe nonce As expected!")
+	log.Debug("safe nonce in chain for end", "nonce", endNonceInChain)
 
 	req3 := &message.Request{From: helper.Addr1, To: &safeContractAddress}
 	req3.SetId(*message.GenerateMessageIdByAddressAndNonce(safeContractAddress, int64(endNonce-1)))

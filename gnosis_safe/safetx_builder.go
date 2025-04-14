@@ -10,7 +10,9 @@ import (
 
 var _ SafeTxBuilder = &SafeTxBuilderByContract{}
 
+// SafeTxBuilder builds transaction calldata and maintains Safe nonce sequence.
 type SafeTxBuilder interface {
+	// Build return transaction calldata, verifiable signatures, and safe nonce.
 	Build(safeTxParams SafeTxParam) (callData []byte, signatures []byte, nonce uint64, err error)
 	GetContractAddress() (common.Address, error)
 }

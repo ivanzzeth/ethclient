@@ -11,8 +11,10 @@ import (
 
 var _ Signer = &PrivateKeySigner{}
 
+// SafeSignFn verifies the provided address and signs the given hash.
 type SafeSignFn func(hash []byte, address common.Address) ([]byte, error)
 
+// Signer defines methods for registration and retrieving the SafeSignFn.
 type Signer interface {
 	GetSignerFn() SafeSignFn
 	RegisterSignerFn(signerFn SafeSignFn)
