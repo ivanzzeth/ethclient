@@ -87,9 +87,7 @@ func BatchSendSafeTx(from common.Address, builder gnosissafe.SafeTxBuilder, deli
 		req := message.Request{
 			From:     from,
 			To:       &safeContractAddress,
-			Value:    big.NewInt(0),
-			Gas:      500000, // Estimated gas can be used.
-			GasPrice: big.NewInt(3000),
+			Gas:      500000, // ensure gas meets the minimum requirement for successful Safe contract execution (avoiding reverts).
 			Data:     callData,
 		}
 		err = deliverer.Deliver(&req, safeNonce)

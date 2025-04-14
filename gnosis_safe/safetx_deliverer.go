@@ -13,6 +13,7 @@ import (
 var _ SafeTxDeliverer = &SafeTxDelivererByEthClient{}
 
 // SafeTxDeliverer dispatches requests to the underlying layer, where each request wraps a call to Safe's execTransaction.
+// TODO: Deliverer should validate the request's gas to ensure it meets the minimum requirement for successful Safe contract execution (avoiding reverts).
 type SafeTxDeliverer interface {
 	Deliver(req *message.Request, safeNonce uint64) error
 }
