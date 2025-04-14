@@ -215,24 +215,24 @@ func test_Schedule(t *testing.T, sim *simulated.Backend) {
 		client.ScheduleMsg(message.AssignMessageId(&message.Request{
 			From:      helper.Addr1,
 			To:        &helper.Addr1,
-			StartTime: time.Now().Add(5 * time.Second).UnixNano(),
+			StartTime: time.Now().Add(2 * time.Second).UnixNano(),
 		}))
 
 		client.ScheduleMsg(message.AssignMessageId(&message.Request{
 			From: helper.Addr1,
 			To:   &helper.Addr1,
 			// StartTime:      time.Now().Add(5 * time.Second).UnixNano(),
-			ExpirationTime: time.Now().UnixNano() - int64(5*time.Second),
+			ExpirationTime: time.Now().UnixNano() - int64(3*time.Second),
 		}))
 
 		client.ScheduleMsg(message.AssignMessageId(&message.Request{
 			From:           helper.Addr1,
 			To:             &helper.Addr1,
 			ExpirationTime: time.Now().Add(10 * time.Second).UnixNano(),
-			Interval:       2 * time.Second,
+			Interval:       1 * time.Second,
 		}))
 
-		time.Sleep(20 * time.Second)
+		time.Sleep(10 * time.Second)
 		client.CloseSendMsg()
 	}()
 

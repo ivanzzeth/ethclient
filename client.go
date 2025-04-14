@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"sync/atomic"
 	"time"
 
 	"github.com/ethereum/go-ethereum"
@@ -58,6 +59,7 @@ type Client struct {
 	msgBuffer int
 	abi       abi.ABI
 
+	closed          atomic.Bool
 	reqChannel      chan message.Request
 	scheduleChannel chan message.Request
 	respChannel     chan message.Response
@@ -150,6 +152,12 @@ func NewEthClient(
 
 func (c *Client) Close() {
 	log.Info("close client..")
+
+	if c.closed.Load() {
+		return
+	}
+
+	c.closed.Store(true)
 
 	c.CloseSendMsg()
 
@@ -311,7 +319,11 @@ func (c *Client) schedule() {
 				go func() {
 					duration := msg.Req.StartTime - time.Now().UnixNano()
 					time.Sleep(time.Duration(duration))
-					c.reqChannel <- *msg.Req
+					if !c.closed.Load() {
+						c.reqChannel <- *msg.Req
+					} else {
+						log.Warn("ethclient closed, then drop the request", "msg", msg.Id().Hex())
+					}
 				}()
 				return
 			}
@@ -357,7 +369,11 @@ func (c *Client) schedule() {
 					return
 				}
 
-				c.reqChannel <- *newReq
+				if !c.closed.Load() {
+					c.reqChannel <- *newReq
+				} else {
+					log.Warn("ethclient closed, then drop the request", "msg", msg.Id().Hex())
+				}
 			}
 		}()
 	}
