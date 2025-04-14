@@ -3,6 +3,7 @@ package message
 import (
 	"errors"
 	"sync/atomic"
+	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
@@ -16,6 +17,7 @@ var ErrPendingChannelClosed = errors.New("pending channel was closed")
 
 type MemorySequencer struct {
 	client       *ethclient.Client
+	closed       atomic.Bool
 	msgStorage   Storage
 	dag          *graph.DiGraph
 	queuedReq    chan Request
@@ -70,6 +72,15 @@ func (s *MemorySequencer) PendingMsgCount() (int, error) {
 }
 
 func (s *MemorySequencer) Close() {
+	if s.closed.Load() {
+		return
+	}
+
+	s.closed.Store(true)
+
+	// Wait for all messages to be sent
+	time.Sleep(3 * time.Second)
+
 	close(s.queuedReq)
 	close(s.pendingReq)
 }
@@ -107,7 +118,11 @@ func (s *MemorySequencer) run() {
 			continue
 		}
 
-		s.pendingCount.Add(1)
-		s.pendingReq <- *msg.Req
+		if !s.closed.Load() {
+			s.pendingCount.Add(1)
+			s.pendingReq <- *msg.Req
+		} else {
+			log.Warn("ethclient closed, then drop the request", "msg", msg.Id().Hex())
+		}
 	}
 }
