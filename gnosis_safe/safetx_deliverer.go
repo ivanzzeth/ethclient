@@ -22,7 +22,7 @@ type SafeTxDelivererByEthClient struct {
 	ethClient                         *ethclient.Client
 	clientSendTxAddr                  common.Address
 	addrToCaller                      sync.Map
-	defaultSafelContractCallerCreator SafelContractCallerCreator
+	defaultSafelContractCallerCreator SafeContractCallerCreator
 }
 
 type DelivererByEthClientOption interface {
@@ -35,7 +35,7 @@ func (f optionFunc) apply(deliverer *SafeTxDelivererByEthClient) {
 	f(deliverer)
 }
 
-func WithDefaultSafelContractCallerCreator(creator SafelContractCallerCreator) optionFunc {
+func WithDefaultSafelContractCallerCreator(creator SafeContractCallerCreator) optionFunc {
 
 	return func(deliverer *SafeTxDelivererByEthClient) {
 		deliverer.defaultSafelContractCallerCreator = creator
@@ -57,8 +57,9 @@ func NewSafeTxDelivererByEthClient(ethClient *ethclient.Client, clientSendTxAddr
 
 func (deliverer *SafeTxDelivererByEthClient) Deliver(req *message.Request, safeNonce uint64) (err error) {
 
-	if req.From != deliverer.clientSendTxAddr {
-		return errors.New("from address do not match")
+	err = deliverer.deliverParamCheck(req, safeNonce)
+	if err != nil {
+		return err
 	}
 
 	value, ok := deliverer.addrToCaller.Load(*req.To)
@@ -69,22 +70,42 @@ func (deliverer *SafeTxDelivererByEthClient) Deliver(req *message.Request, safeN
 		}
 		deliverer.addrToCaller.Store(*req.To, value)
 	}
-	safelContractCaller := value.(SafelContractCaller)
+	safelContractCaller := value.(SafeContractCaller)
 
-	nonceInChain, err := safelContractCaller.GetNonce()
+	nonceOnChain, err := safelContractCaller.GetNonce()
 	if err != nil {
 		return err
 	}
 
-	if nonceInChain < safeNonce {
-		req.AfterMsg = message.GenerateMessageIdByAddressAndNonce(*req.To, int64(safeNonce-1))
+	if nonceOnChain < safeNonce {
+		req.AfterMsg = message.GenerateMessageIdByAddressAndNonce(*req.To, safeNonce-1)
 		log.Debug("GenerateMessageIdByAddressAndNonce for MSG : ", "ID", req.Id(), "afterMSG", req.AfterMsg)
-	} else if nonceInChain > safeNonce {
+	} else if nonceOnChain > safeNonce {
 		return errors.New("safeNonce is invalid")
 	}
 
-	// sync schedule
+	// sync to schedule
 	deliverer.ethClient.ScheduleMsg(req)
-	log.Debug("deliverer sync schedule Msg : ", req.Id().Hex())
+	log.Debug("deliverer schedule Msg : ", req.Id().Hex())
+	return nil
+}
+
+func (deliverer *SafeTxDelivererByEthClient) deliverParamCheck(req *message.Request, safeNonce uint64) (err error) {
+	if req.To == nil {
+		return errors.New("to address is nil")
+	}
+
+	id := message.GenerateMessageIdByAddressAndNonce(*req.To, safeNonce)
+	if req.Id() != common.BytesToHash([]byte{}) {
+		if id.Cmp(req.Id()) != 0 {
+			return errors.New("req id format violation, must be keccak256(address+nonce)")
+		}
+	} else {
+		req.SetId(*id)
+	}
+
+	if req.From != deliverer.clientSendTxAddr {
+		return errors.New("from address do not match")
+	}
 	return nil
 }

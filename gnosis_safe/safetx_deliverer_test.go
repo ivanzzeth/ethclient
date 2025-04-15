@@ -41,18 +41,14 @@ func TestSafeTxDelivererByEthClient(t *testing.T) {
 
 	req1 := &message.Request{From: helper.Addr1, To: &safeAddr, Value: big.NewInt(0).Mul(big.NewInt(1000000000000000000), big.NewInt(10))}
 	req1 = message.AssignMessageId(req1)
-	err = deliverer.Deliver(req1, safeNonce.Uint64())
-	if err != nil {
-		t.Error(err)
-	}
+
+	sim.Client().ScheduleMsg(req1)
 	time.Sleep(2 * time.Second)
 
 	getReq1, err := sim.Client().GetMsg(req1.Id())
 	if err != nil {
 		t.Error(err)
 	}
-
-	assert.Equal(t, req1.Id(), getReq1.Id())
 
 	sim.CommitAndExpectTx(getReq1.Resp.Tx.Hash())
 
@@ -100,8 +96,8 @@ func TestSafeTxDelivererByEthClient(t *testing.T) {
 			}
 			req2 := &message.Request{From: helper.Addr1, To: &safeAddr, Data: callData, Value: big.NewInt(0),
 				Gas:      5000000,
-				GasPrice: big.NewInt(3000000000)}
-			req2.SetId(*message.GenerateMessageIdByAddressAndNonce(safeAddr, int64(nonce)))
+				GasPrice: big.NewInt(3000000000),
+			}
 			log.Debug("safe nonce from builder", "nonce", nonce, "MSGID", req2.Id())
 			err = deliverer.Deliver(req2, nonce)
 			if err != nil {
@@ -169,15 +165,21 @@ func TestSafeTxDelivererByEthClient(t *testing.T) {
 	time.Sleep(5 * time.Second)
 
 	req3 := &message.Request{From: helper.Addr1, To: &safeAddr}
-	req3 = message.AssignMessageId(req3)
 	err = deliverer.Deliver(req3, safeNonce.Uint64())
-
 	assert.Equal(t, "safeNonce is invalid", err.Error())
 
 	req4 := &message.Request{From: helper.Addr2, To: &safeAddr}
-	req4 = message.AssignMessageId(req4)
 	err = deliverer.Deliver(req4, safeNonce.Uint64()+100)
 	assert.Equal(t, "from address do not match", err.Error())
+
+	req5 := &message.Request{From: helper.Addr2, To: &safeAddr}
+	req5.SetId(*message.GenerateMessageIdByNonce(safeNonce.Int64()))
+	err = deliverer.Deliver(req5, safeNonce.Uint64()+100)
+	assert.Equal(t, "req id format violation, must be keccak256(address+nonce)", err.Error())
+
+	req6 := &message.Request{From: helper.Addr1}
+	err = deliverer.Deliver(req6, safeNonce.Uint64()+100)
+	assert.Equal(t, "to address is nil", err.Error())
 
 	endSafeNonce, err := safeContractV1_3.GetNonce()
 	if err != nil {

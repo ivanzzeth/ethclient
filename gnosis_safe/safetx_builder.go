@@ -14,17 +14,18 @@ var _ SafeTxBuilder = &SafeTxBuilderByContract{}
 type SafeTxBuilder interface {
 	// Build return transaction calldata, verifiable signatures, and safe nonce.
 	Build(safeTxParams SafeTxParam) (callData []byte, signatures []byte, nonce uint64, err error)
+	BuildCustomNonce(safeTxParams SafeTxParam, nonce uint64) (callData []byte, signatures []byte, err error)
 	GetContractAddress() (common.Address, error)
 }
 
 type SafeTxBuilderByContract struct {
 	safeContract    SafeContract
 	addressToSigner map[common.Address]Signer
-	sortAddresses   []common.Address
+	sortedAddresses []common.Address
 	nonceStorage    nonce.Storage
 }
 
-func NewSafeTxBuilderByContract(safe SafeContract, signers map[common.Address]Signer, nonceStorage nonce.Storage) (SafeTxBuilder, error) {
+func NewSafeTxBuilderByContract(safe SafeContract, signers map[common.Address]Signer, nonceStorage nonce.Storage) (*SafeTxBuilderByContract, error) {
 	threshold, err := safe.GetThreshold()
 	if err != nil {
 		return nil, err
@@ -59,19 +60,12 @@ func NewSafeTxBuilderByContract(safe SafeContract, signers map[common.Address]Si
 	return &SafeTxBuilderByContract{
 		safeContract:    safe,
 		addressToSigner: signers,
-		sortAddresses:   sortAddresses,
+		sortedAddresses: sortAddresses,
 		nonceStorage:    nonceStorage,
 	}, nil
 }
 
 func (builder *SafeTxBuilderByContract) Build(safeTxParams SafeTxParam) ([]byte, []byte, uint64, error) {
-	contractVersion, err := builder.safeContract.GetVersion()
-	if err != nil {
-		return nil, nil, 0, err
-	}
-	if safeTxParams.Version() != contractVersion {
-		return nil, nil, 0, ErrSafeParamVersionNotMatch
-	}
 
 	safeContractAddr := builder.safeContract.GetAddress()
 
@@ -84,28 +78,7 @@ func (builder *SafeTxBuilderByContract) Build(safeTxParams SafeTxParam) ([]byte,
 		return nil, nil, 0, err
 	}
 
-	safeTxHash, err := builder.safeContract.GetTransactionHash(safeNonce, safeTxParams)
-	if err != nil {
-		return nil, nil, 0, err
-	}
-
-	signatures := make([]byte, 0)
-	for _, address := range builder.sortAddresses {
-
-		signer, ok := builder.addressToSigner[address]
-		if !ok {
-			return nil, nil, 0, errors.New("unknown signer address")
-		}
-
-		signerFn := signer.GetSignerFn()
-		signature, err := signerFn(safeTxHash, address)
-		if err != nil {
-			return nil, nil, 0, err
-		}
-		signatures = append(signatures, signature...)
-	}
-
-	callData, err := builder.safeContract.EncodeExecTransactionData(signatures, safeTxParams)
+	callData, signatures, err := builder.buildCustomNonce(safeTxParams, safeNonce)
 	if err != nil {
 		return nil, nil, 0, err
 	}
@@ -116,6 +89,48 @@ func (builder *SafeTxBuilderByContract) Build(safeTxParams SafeTxParam) ([]byte,
 	}
 
 	return callData, signatures, safeNonce, nil
+}
+
+func (builder *SafeTxBuilderByContract) BuildCustomNonce(safeTxParams SafeTxParam, safeNonce uint64) (callData []byte, signatures []byte, err error) {
+	return builder.buildCustomNonce(safeTxParams, safeNonce)
+}
+
+func (builder *SafeTxBuilderByContract) buildCustomNonce(safeTxParams SafeTxParam, nonce uint64) (callData []byte, signatures []byte, err error) {
+	contractVersion, err := builder.safeContract.GetVersion()
+	if err != nil {
+		return nil, nil, err
+	}
+	if safeTxParams.Version() != contractVersion {
+		return nil, nil, ErrSafeParamVersionNotMatch
+	}
+
+	safeTxHash, err := builder.safeContract.GetTransactionHash(nonce, safeTxParams)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	signatures = make([]byte, 0)
+	for _, address := range builder.sortedAddresses {
+
+		signer, ok := builder.addressToSigner[address]
+		if !ok {
+			return nil, nil, errors.New("unknown signer address")
+		}
+
+		signerFn := signer.GetSignerFn()
+		signature, err := signerFn(common.BytesToHash(safeTxHash), address)
+		if err != nil {
+			return nil, nil, err
+		}
+		signatures = append(signatures, signature...)
+	}
+
+	callData, err = builder.safeContract.EncodeExecTransactionData(signatures, safeTxParams)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return callData, signatures, nil
 }
 
 func (builder *SafeTxBuilderByContract) GetContractAddress() (common.Address, error) {

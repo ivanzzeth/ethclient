@@ -10,19 +10,19 @@ import (
 )
 
 var _ SafeContract = &SafeContractVersion1_3_0{}
-var _ SafelContractCaller = &SafeContractVersion1_3_0{}
+var _ SafeContractCaller = &SafeContractVersion1_3_0{}
 
-var ErrSafeParamVersionNotMatch = errors.New("safe param version do not match")
+var ErrSafeParamVersionNotMatch = errors.New("safe param version mismatch")
 
 // SafeContract is an abstraction of Safe implementations. Different versions can have different implementations.
 type SafeContract interface {
-	SafelContractCaller
+	SafeContractCaller
 	// EncodeExecTransactionData generates calldata for Safe's execTransaction call.
 	EncodeExecTransactionData(signatures []byte, txParams SafeTxParam) ([]byte, error)
 }
 
-// SafelContractCaller read-only operations for Safe contracts.
-type SafelContractCaller interface {
+// SafeContractCaller read-only operations for Safe contracts.
+type SafeContractCaller interface {
 	GetNonce() (uint64, error)
 	GetThreshold() (uint64, error)
 	GetAddress() common.Address
@@ -32,8 +32,8 @@ type SafelContractCaller interface {
 	EncodeTransactionData(nonce uint64, txParams SafeTxParam) ([]byte, error)
 }
 
-// SafelContractCallerCreator generates a SafeContractCaller instance based on the provided contract address and backend service.
-type SafelContractCallerCreator func(address common.Address, backend bind.ContractBackend) (SafelContractCaller, error)
+// SafeContractCallerCreator generates a SafeContractCaller instance based on the provided contract address and backend service.
+type SafeContractCallerCreator func(address common.Address, backend bind.ContractBackend) (SafeContractCaller, error)
 
 type SafeContractVersion1_3_0 struct {
 	Address        common.Address
@@ -132,7 +132,7 @@ func (contract *SafeContractVersion1_3_0) GetVersion() (string, error) {
 	return contract.safel2contract.VERSION(nil)
 }
 
-func NewDefaultSafelContractCallerCreator(address common.Address, backend bind.ContractBackend) (SafelContractCaller, error) {
+func NewDefaultSafelContractCallerCreator(address common.Address, backend bind.ContractBackend) (SafeContractCaller, error) {
 	safel2contractV1_3, err := NewSafeContractVersion1_3_0(address, backend)
 	if err != nil {
 		return nil, err

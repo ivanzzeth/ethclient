@@ -81,7 +81,7 @@ func TestSafeTxBuilderByContract(t *testing.T) {
 		}
 
 		signerFn := signer.GetSignerFn()
-		signature, err := signerFn(wantCallData, addr)
+		signature, err := signerFn(common.BytesToHash(wantCallData), addr)
 		if err != nil {
 			t.Error(err)
 		}

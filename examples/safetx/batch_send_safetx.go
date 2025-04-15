@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"crypto/ecdsa"
-	"fmt"
 	"math/big"
 	"os"
 	"time"
@@ -25,6 +24,7 @@ func main() {
 	logger := log.NewLogger(handler)
 	log.SetDefault(logger)
 
+	// This example is only for proving how it works.
 	// TODO: This address should be replaced with your deployed Safe Proxy contract address.
 	// The owner addresses of the test contract include helper.Addr1, helper.Addr2, helper.Addr3, and helper.Addr4, with a threshold of 3.
 	safeContractAddress := common.HexToAddress("0xc582Bc0317dbb0908203541971a358c44b1F3766")
@@ -44,11 +44,11 @@ func main() {
 	if err != nil {
 		log.Crit(err.Error())
 	}
-	startNonceInChain, err := safeContract.GetNonce()
+	startNonceOnChain, err := safeContract.GetNonce()
 	if err != nil {
 		log.Crit("nonce has err")
 	}
-	log.Debug("safe nonce in chain for start", "nonce", startNonceInChain)
+	log.Debug("safe nonce in chain for start", "nonce", startNonceOnChain)
 
 	safeOwnerKeys := []*ecdsa.PrivateKey{helper.PrivateKey2, helper.PrivateKey3, helper.PrivateKey4}
 
@@ -66,30 +66,33 @@ func main() {
 	locker := nonceStorage.NonceLockFrom(safeContractAddress)
 	locker.Lock()
 	startNonce, err := nonceStorage.GetNonce(safeContractAddress)
+	locker.Unlock()
 	if err != nil {
 		log.Crit(err.Error())
 	}
-	locker.Unlock()
 
 	deliverer := gnosissafe.NewSafeTxDelivererByEthClient(client, helper.Addr1)
 
-	to := common.HexToAddress("0xa0Ee7A142d267C1f36714E4a8F75612F20a79720")
-
 	var loopCount = 3
-
 	go func() {
+		// there's 6=3*2 requests that will be scheduled.
 		for range loopCount {
 			go func() {
 
 				// value is greater than the balance of the contract.
-				// this transaction will fail to execute, as the transfer amount exceeds the available balance in the contract address.
+				/*
+					After this tx is executed:
+						The transfer will fail (insufficient contract balance)
+						The Safe nonce still increments by 1
+						Thus, any previously submitted transactions with higher nonces can still execute without causing signature verification failures.
+				*/
 				{
 					safeTxParam := gnosissafe.SafeTxParamV1_3{
-						To:             to,
-						Value:          big.NewInt(0).Mul(big.NewInt(1000000000000000000), big.NewInt(10000000000)),
+						To:             helper.Addr4,
+						Value:          big.NewInt(0).Mul(big.NewInt(1000000000000000000), big.NewInt(10000000000)), // 1e10 eth
 						Calldata:       []byte{},
 						Operation:      0,
-						SafeTxGas:      big.NewInt(220000),
+						SafeTxGas:      big.NewInt(220000), // TODO: Adjust these gas settings according to your network conditions!
 						BaseGas:        big.NewInt(50000),
 						GasPrice:       big.NewInt(2000),
 						GasToken:       common.HexToAddress("0x00"),
@@ -103,14 +106,12 @@ func main() {
 					log.Info("safe nonce value", "int", safeNonce)
 
 					req := message.Request{
-						From:     helper.Addr1,
-						To:       &safeContractAddress,
-						Value:    big.NewInt(0),
-						Gas:      500000,
-						GasPrice: big.NewInt(3000),
-						Data:     callData,
+						From:  helper.Addr1,
+						To:    &safeContractAddress,
+						Value: big.NewInt(0),
+						Gas:   500000, // TODO: ensure gas meets the minimum requirement for successful Safe contract execution (avoiding reverts).
+						Data:  callData,
 					}
-					req.SetId(*message.GenerateMessageIdByAddressAndNonce(safeContractAddress, int64(safeNonce)))
 					err = deliverer.Deliver(&req, safeNonce)
 					if err != nil {
 						log.Crit(err.Error())
@@ -121,11 +122,11 @@ func main() {
 				// this transaction is expected to execute successfully on-chain.
 				{
 					safeTxParam := gnosissafe.SafeTxParamV1_3{
-						To:             to,
+						To:             helper.Addr4,
 						Value:          big.NewInt(0).Div(big.NewInt(1000000000000000000), big.NewInt(100)),
 						Calldata:       []byte{},
 						Operation:      0,
-						SafeTxGas:      big.NewInt(220000),
+						SafeTxGas:      big.NewInt(220000), // TODO: Adjust these gas settings according to your network conditions!
 						BaseGas:        big.NewInt(50000),
 						GasPrice:       big.NewInt(2000),
 						GasToken:       common.HexToAddress("0x00"),
@@ -139,14 +140,12 @@ func main() {
 					log.Info("safe nonce value", "int", safeNonce)
 
 					req := message.Request{
-						From:     helper.Addr1,
-						To:       &safeContractAddress,
-						Value:    big.NewInt(0),
-						Gas:      500000,
-						GasPrice: big.NewInt(3000),
-						Data:     callData,
+						From:  helper.Addr1,
+						To:    &safeContractAddress,
+						Value: big.NewInt(0),
+						Gas:   500000, // TODO: ensure gas meets the minimum requirement for successful Safe contract execution (avoiding reverts).
+						Data:  callData,
 					}
-					req.SetId(*message.GenerateMessageIdByAddressAndNonce(safeContractAddress, int64(safeNonce)))
 					err = deliverer.Deliver(&req, safeNonce)
 					if err != nil {
 						log.Crit(err.Error())
@@ -162,31 +161,29 @@ func main() {
 	}()
 
 	for resp := range client.Response() {
-		fmt.Println("respInfo", "id", resp.Id, "err", resp.Err)
+		log.Info("respInfo", "id", resp.Id, "err", resp.Err)
 	}
 
 	locker = nonceStorage.NonceLockFrom(safeContractAddress)
 	locker.Lock()
 	endNonce, err := nonceStorage.GetNonce(safeContractAddress)
+	locker.Unlock()
 	if err != nil {
 		log.Crit(err.Error())
 	}
-	locker.Unlock()
 
 	if endNonce-startNonce != uint64(loopCount*2) {
 		log.Crit("safe nonce has mistake")
 	}
 	log.Info("safe nonce As expected!")
 
-	endNonceInChain, err := safeContract.GetNonce()
+	endNonceOnChain, err := safeContract.GetNonce()
 	if err != nil {
 		log.Crit("nonce has err")
 	}
-	log.Debug("safe nonce in chain for end", "nonce", endNonceInChain)
+	log.Debug("safe nonce in chain for end", "nonce", endNonceOnChain)
 
 	req3 := &message.Request{From: helper.Addr1, To: &safeContractAddress}
-	req3.SetId(*message.GenerateMessageIdByAddressAndNonce(safeContractAddress, int64(endNonce-1)))
-
 	err = deliverer.Deliver(req3, endNonce-1)
 	if err == nil {
 		log.Crit("nonce has err")
@@ -199,7 +196,6 @@ func main() {
 	}
 
 	req4 := &message.Request{From: helper.Addr2, To: &safeContractAddress}
-	req4.SetId(*message.GenerateMessageIdByAddressAndNonce(safeContractAddress, int64(endNonce)))
 	err = deliverer.Deliver(req4, endNonce)
 
 	if err == nil {

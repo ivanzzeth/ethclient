@@ -12,7 +12,7 @@ import (
 var _ Signer = &PrivateKeySigner{}
 
 // SafeSignFn verifies the provided address and signs the given hash.
-type SafeSignFn func(hash []byte, address common.Address) ([]byte, error)
+type SafeSignFn func(hash common.Hash, address common.Address) ([]byte, error)
 
 // Signer defines methods for registration and retrieving the SafeSignFn.
 type Signer interface {
@@ -32,12 +32,12 @@ func NewPrivateKeySigner(key *ecdsa.PrivateKey) *PrivateKeySigner {
 
 	signer.Address = crypto.PubkeyToAddress(key.PublicKey)
 
-	signerFn := func(hash []byte, address common.Address) ([]byte, error) {
+	signerFn := func(hash common.Hash, address common.Address) ([]byte, error) {
 		if address != signer.Address {
 			return nil, bind.ErrNotAuthorized
 		}
 
-		signature, err := crypto.Sign(hash, key)
+		signature, err := crypto.Sign(hash[:], key)
 		if err != nil {
 			return nil, err
 		}
@@ -54,7 +54,7 @@ func NewPrivateKeySigner(key *ecdsa.PrivateKey) *PrivateKeySigner {
 }
 
 func (signer *PrivateKeySigner) GetSignerFn() SafeSignFn {
-	return func(hash []byte, address common.Address) ([]byte, error) {
+	return func(hash common.Hash, address common.Address) ([]byte, error) {
 		if len(signer.safeSignFns) == 0 {
 			return nil, fmt.Errorf("no signerFn registered")
 		}
