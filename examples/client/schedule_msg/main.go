@@ -18,21 +18,21 @@ func main() {
 
 	go func() {
 		client.ScheduleMsg((&message.Request{
-			From:      helper.Addr,
-			To:        &helper.Addr,
+			From:      helper.Addr1,
+			To:        &helper.Addr1,
 			StartTime: time.Now().Add(5 * time.Second).UnixNano(),
 		}).SetRandomId())
 
 		client.ScheduleMsg((&message.Request{
-			From: helper.Addr,
-			To:   &helper.Addr,
+			From: helper.Addr1,
+			To:   &helper.Addr1,
 			// StartTime:      time.Now().Add(5 * time.Second).UnixNano(),
 			ExpirationTime: time.Now().UnixNano() - int64(5*time.Second),
 		}).SetRandomId())
 
 		client.ScheduleMsg((&message.Request{
-			From:           helper.Addr,
-			To:             &helper.Addr,
+			From:           helper.Addr1,
+			To:             &helper.Addr1,
 			ExpirationTime: time.Now().Add(10 * time.Second).UnixNano(),
 			Interval:       2 * time.Second,
 		}).SetRandomId())

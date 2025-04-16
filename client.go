@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"sync/atomic"
 	"time"
 
 	"github.com/ethereum/go-ethereum"
@@ -58,6 +59,8 @@ type Client struct {
 	msgBuffer int
 	abi       abi.ABI
 
+	closed          atomic.Bool
+	reqClosed       atomic.Bool
 	reqChannel      chan message.Request
 	scheduleChannel chan message.Request
 	respChannel     chan message.Response
@@ -151,11 +154,20 @@ func NewEthClient(
 func (c *Client) Close() {
 	log.Info("close client..")
 
-	c.CloseSendMsg()
+	if c.closed.Load() {
+		return
+	}
+
+	c.closed.Store(true)
+
+	// Wait for all messages to be sent
+	time.Sleep(3 * time.Second)
 
 	c.Subscriber.Close()
 
 	log.Debug("subscriber closed")
+
+	c.CloseSendMsg()
 
 	c.Client.Close()
 
@@ -165,6 +177,12 @@ func (c *Client) Close() {
 }
 
 func (c *Client) CloseSendMsg() {
+	if c.reqClosed.Load() {
+		return
+	}
+
+	c.reqClosed.Store(true)
+
 	close(c.reqChannel)
 	log.Info("reqChannel closed")
 }
@@ -209,10 +227,18 @@ func (c *Client) NewMethodData(a abi.ABI, methodName string, args ...interface{}
 
 func (c *Client) ScheduleMsg(req *message.Request) {
 	log.Info("schedule message", "msgId", req.Id().Hex())
+	if c.reqClosed.Load() {
+		// TODO: return error
+		return
+	}
 	c.reqChannel <- *req.Copy()
 }
 
 func (c *Client) ReplayMsg(msgId common.Hash) (newMsgId common.Hash, err error) {
+	if c.reqClosed.Load() {
+		return common.Hash{}, errors.New("client is closed")
+	}
+
 	msg, err := c.msgStore.GetMsg(msgId)
 	if err != nil {
 		return
@@ -268,16 +294,13 @@ func (c *Client) schedule() {
 				panic(fmt.Errorf("no msgId provided"))
 			}
 
-			if c.msgStore.HasMsg(req.Id()) {
-				resp.Err = fmt.Errorf("already known")
-				return
-			}
-
-			// message.MessageStatusSubmitted
-			err = c.msgStore.AddMsg(req)
-			if err != nil {
-				err = fmt.Errorf("no msgId provided: %v", err)
-				return
+			if !c.msgStore.HasMsg(req.Id()) {
+				// message.MessageStatusSubmitted
+				err = c.msgStore.AddMsg(req)
+				if err != nil {
+					err = fmt.Errorf("no msgId provided: %v", err)
+					return
+				}
 			}
 
 			msg, err := c.msgStore.GetMsg(req.Id())
@@ -314,7 +337,11 @@ func (c *Client) schedule() {
 				go func() {
 					duration := msg.Req.StartTime - time.Now().UnixNano()
 					time.Sleep(time.Duration(duration))
-					c.reqChannel <- *msg.Req
+					if !c.reqClosed.Load() {
+						c.reqChannel <- *msg.Req
+					} else {
+						log.Warn("ethclient closed, then drop the request", "msg", msg.Id().Hex())
+					}
 				}()
 				return
 			}
@@ -360,7 +387,11 @@ func (c *Client) schedule() {
 					return
 				}
 
-				c.reqChannel <- *newReq
+				if !c.reqClosed.Load() {
+					c.reqChannel <- *newReq
+				} else {
+					log.Warn("ethclient closed, then drop the request", "msg", msg.Id().Hex())
+				}
 			}
 		}()
 	}

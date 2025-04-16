@@ -60,7 +60,7 @@ func (s *MemoryStorage) UpdateResponse(msgId common.Hash, resp Response) error {
 	}
 
 	if msg.Resp != nil {
-		panic("same msg not allowed updating response twice")
+		panic("same msg not allowed updating response twice" + msgId.Hex())
 	}
 
 	msg.Resp = &resp

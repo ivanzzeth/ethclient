@@ -75,13 +75,13 @@ func test_QueryHandler(t *testing.T, sim *simulated.Backend) {
 		t.Logf("event %v: %v", event.Name, event.ID.Hex())
 	}
 
-	nonceBefore, _ := client.Client.PendingNonceAt(ctx, helper.Addr)
+	nonceBefore, _ := client.Client.PendingNonceAt(ctx, helper.Addr1)
 	callCount := 3
 	test_BatchCallTestFunc1(t, ctx, sim, contract, callCount)
 
 	time.Sleep(10 * time.Second)
 
-	nonceAfter, _ := client.Client.PendingNonceAt(ctx, helper.Addr)
+	nonceAfter, _ := client.Client.PendingNonceAt(ctx, helper.Addr1)
 
 	t.Log("nonce comparison", nonceBefore, nonceAfter)
 	assert.Equal(t, uint64(callCount), nonceAfter-nonceBefore)
@@ -173,7 +173,7 @@ func test_BatchCallTestFunc1(t *testing.T, ctx context.Context, sim *simulated.B
 
 		// First transact.
 		opts, err := sim.Client().MessageToTransactOpts(ctx, message.Request{
-			From: helper.Addr,
+			From: helper.Addr1,
 		})
 		if err != nil {
 			t.Fatalf("TestFunc1 err: %v", err)

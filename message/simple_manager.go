@@ -277,7 +277,7 @@ func (m SimpleManager) sendMsg(ctx context.Context, msg Request) (signedTx *type
 	}
 
 	log.Info("Send Message successfully", "msgId", msg.Id(), "txHash", signedTx.Hash().Hex(), "from", msg.From.Hex(),
-		"to", msg.To.Hex(), "value", msg.Value)
+		"to", msg.To.Hex(), "value", msg.Value, "nonce", signedTx.Nonce())
 
 	return signedTx, nil
 }
@@ -398,6 +398,8 @@ func (c SimpleManager) newTransactionWithNonce(ctx context.Context, msg Request,
 			return nil, err
 		}
 	}
+
+	log.Debug("nonce assign msg", "nonce", nonce, "ID", msg.Id())
 
 	tx = types.NewTransaction(nonce, *msg.To, msg.Value, msg.Gas, msg.GasPrice, msg.Data)
 

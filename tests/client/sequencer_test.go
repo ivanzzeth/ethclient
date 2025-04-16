@@ -59,7 +59,7 @@ func test_Sequencer_Concurrent(t *testing.T, sim *simulated.Backend) {
 					afterMsgId = message.GenerateMessageIdByNonce(int64(nonce) - 1)
 				}
 				msg := &message.Request{
-					From:     helper.Addr,
+					From:     helper.Addr1,
 					To:       &contractAddr,
 					Data:     data,
 					AfterMsg: afterMsgId,

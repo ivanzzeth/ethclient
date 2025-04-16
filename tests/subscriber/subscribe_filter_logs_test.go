@@ -135,7 +135,7 @@ func testSubscribeFilterLogs(t *testing.T, sim *simulated.Backend, confirmations
 
 	// First transact.
 	opts, err := client.MessageToTransactOpts(ctx, message.Request{
-		From: helper.Addr,
+		From: helper.Addr1,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -167,7 +167,7 @@ func testSubscribeFilterLogs(t *testing.T, sim *simulated.Backend, confirmations
 
 	// Second transact.
 	opts, err = client.MessageToTransactOpts(ctx, message.Request{
-		From: helper.Addr,
+		From: helper.Addr1,
 	})
 	if err != nil {
 		t.Fatal(err)
