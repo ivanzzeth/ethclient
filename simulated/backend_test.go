@@ -209,8 +209,8 @@ func TestFork(t *testing.T) {
 //  2. Send a transaction.
 //  3. Check that the TX is included in block 1.
 //  4. Fork by using the parent block as ancestor.
-//  5. Mine a block, Re-send the transaction and mine another one.
-//  6. Check that the TX is now included in block 2.
+//  5. Mine a block. We expect the out-forked tx to have trickled to the pool, and into the new block.
+//  6. Check that the TX is now included in (the new) block 1.
 func TestForkResendTx(t *testing.T) {
 	t.Parallel()
 	testAddr := crypto.PubkeyToAddress(testKey.PublicKey)
@@ -228,7 +228,9 @@ func TestForkResendTx(t *testing.T) {
 	if err != nil {
 		t.Fatalf("could not create transaction: %v", err)
 	}
-	client.SendTransaction(ctx, tx)
+	if err := client.SendTransaction(ctx, tx); err != nil {
+		t.Fatalf("sending transaction: %v", err)
+	}
 	sim.Commit()
 
 	// 3.
@@ -244,12 +246,8 @@ func TestForkResendTx(t *testing.T) {
 
 	// 5.
 	sim.Commit()
-	if err := client.SendTransaction(ctx, tx); err != nil {
-		t.Fatalf("sending transaction: %v", err)
-	}
-	sim.Commit()
 	receipt, _ = client.TransactionReceipt(ctx, tx.Hash())
-	if h := receipt.BlockNumber.Uint64(); h != 2 {
+	if h := receipt.BlockNumber.Uint64(); h != 1 {
 		t.Errorf("TX included in wrong block: %d", h)
 	}
 }
