@@ -402,7 +402,9 @@ func (cs *ChainSubscriber) FilterLogsWithChannel(ctx context.Context, q ethereum
 				if cs.storage.IsFilterLogsSupported(filterQuery) {
 					lgs, err = cs.storage.FilterLogs(ctx, filterQuery)
 				} else {
-					lgs, err = cs.c.FilterLogs(ctx, filterQuery)
+					// We need to call rpc nodes so that splitting query as needed.
+					lgs, err = cs.filterLogsWithAutoSplit(ctx, filterQuery)
+					// lgs, err = cs.c.FilterLogs(ctx, filterQuery)
 
 					/*
 						If a query returns too many results or exceeds the max query duration,
@@ -520,6 +522,49 @@ func (cs *ChainSubscriber) FilterLogsWithChannel(ctx context.Context, q ethereum
 	}()
 
 	return nil
+}
+
+func (cs *ChainSubscriber) filterLogsWithAutoSplit(ctx context.Context, q ethereum.FilterQuery) (logs []etypes.Log, err error) {
+	// TODO: Configuration
+	queries, err := splitFilterQuery(q, 5)
+	if err != nil {
+		return
+	}
+
+	for _, query := range queries {
+		var ls []etypes.Log
+		ls, err = cs.c.FilterLogs(ctx, query)
+		if err != nil {
+			logs = nil
+			return
+		}
+
+		logs = append(logs, ls...)
+	}
+
+	slices.SortFunc(logs, func(a, b etypes.Log) int {
+		if a.BlockNumber < b.BlockNumber {
+			return -1
+		} else if a.BlockNumber > b.BlockNumber {
+			return 1
+		}
+
+		if a.TxIndex < b.TxIndex {
+			return -1
+		} else if a.TxIndex > b.TxIndex {
+			return 1
+		}
+
+		if a.Index < b.Index {
+			return -1
+		} else if a.Index > b.Index {
+			return 1
+		}
+
+		return 0
+	})
+
+	return
 }
 
 // SubscribeNewHead .
