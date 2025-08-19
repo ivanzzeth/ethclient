@@ -227,7 +227,7 @@ func (cs *ChainSubscriber) FilterLogs(ctx context.Context, q ethereum.FilterQuer
 // 3. cache all of finalized historical data, e.g., blockByHash, txByHash
 func (cs *ChainSubscriber) FilterLogsWithChannel(ctx context.Context, q ethereum.FilterQuery, logsChan chan<- etypes.Log, watch bool, closeOnExit bool) (err error) {
 	if q.BlockHash != nil {
-		logs, err := cs.c.FilterLogs(ctx, q)
+		logs, err := cs.filterLogsWithAutoSplit(ctx, q)
 		if err != nil {
 			return err
 		}

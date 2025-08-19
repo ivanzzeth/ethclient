@@ -8,6 +8,7 @@ import (
 
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
+	etypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 )
 
@@ -57,6 +58,11 @@ func GetQueryHash(chainId *big.Int, query ethereum.FilterQuery) common.Hash {
 	json, _ := json.Marshal(obj)
 	hash := crypto.Keccak256Hash(json)
 	return hash
+}
+
+type QueryWithChannel struct {
+	Query
+	out chan etypes.Log // channel to send logs to
 }
 
 func splitFilterQuery(queryIncoming ethereum.FilterQuery, maxAddressesPerQuery int) (queries []ethereum.FilterQuery, err error) {

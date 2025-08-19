@@ -82,3 +82,4 @@ type QueryHandler interface {
 }
 
 type resubscribeFunc func() (ethereum.Subscription, error)
+type FilterLogsFunc func(ctx context.Context, q ethereum.FilterQuery) (logs []etypes.Log, err error)
