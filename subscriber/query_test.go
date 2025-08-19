@@ -7,8 +7,287 @@ import (
 
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
+	etypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/stretchr/testify/assert"
 )
+
+func TestDistributeLogs(t *testing.T) {
+	// Create test hashes and addresses
+	blockHash1 := common.HexToHash("0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef")
+	blockHash2 := common.HexToHash("0xfedcba0987654321fedcba0987654321fedcba0987654321fedcba0987654321")
+	topic1 := common.HexToHash("0xabc123def456abc123def456abc123def456abc123def456abc123def456abc1")
+	topic2 := common.HexToHash("0xdef456abc123def456abc123def456abc123def456abc123def456abc123def4")
+	topic3 := common.HexToHash("0x123abc456def123abc456def123abc456def123abc456def123abc456def123a")
+	address1 := common.HexToAddress("0x742d35Cc6634C893292Ce8bB6239C002Ad8e6b59")
+	address2 := common.HexToAddress("0x853d43Cc6634C893292Ce8bB6239C002Ad8e6b60")
+
+	tests := []struct {
+		name     string
+		allLogs  []etypes.Log
+		queries  []ethereum.FilterQuery
+		expected [][]etypes.Log
+	}{
+		{
+			name: "Basic block number range filtering",
+			allLogs: []etypes.Log{
+				{BlockNumber: 100, BlockHash: blockHash1, Address: address1},
+				{BlockNumber: 150, BlockHash: blockHash1, Address: address1},
+				{BlockNumber: 200, BlockHash: blockHash1, Address: address1},
+			},
+			queries: []ethereum.FilterQuery{
+				{
+					FromBlock: big.NewInt(120),
+					ToBlock:   big.NewInt(180),
+					Addresses: []common.Address{address1},
+				},
+			},
+			expected: [][]etypes.Log{
+				{{BlockNumber: 150, BlockHash: blockHash1, Address: address1}},
+			},
+		},
+		{
+			name: "Multiple queries with different ranges",
+			allLogs: []etypes.Log{
+				{BlockNumber: 100, BlockHash: blockHash1, Address: address1},
+				{BlockNumber: 200, BlockHash: blockHash1, Address: address1},
+				{BlockNumber: 300, BlockHash: blockHash1, Address: address1},
+			},
+			queries: []ethereum.FilterQuery{
+				{
+					FromBlock: big.NewInt(50),
+					ToBlock:   big.NewInt(150),
+					Addresses: []common.Address{address1},
+				},
+				{
+					FromBlock: big.NewInt(250),
+					ToBlock:   big.NewInt(350),
+					Addresses: []common.Address{address1},
+				},
+			},
+			expected: [][]etypes.Log{
+				{{BlockNumber: 100, BlockHash: blockHash1, Address: address1}},
+				{{BlockNumber: 300, BlockHash: blockHash1, Address: address1}},
+			},
+		},
+		{
+			name: "Block hash specific filtering",
+			allLogs: []etypes.Log{
+				{BlockNumber: 100, BlockHash: blockHash1, Address: address1},
+				{BlockNumber: 100, BlockHash: blockHash2, Address: address1},
+			},
+			queries: []ethereum.FilterQuery{
+				{
+					BlockHash: &blockHash1,
+					Addresses: []common.Address{address1},
+				},
+			},
+			expected: [][]etypes.Log{
+				{{BlockNumber: 100, BlockHash: blockHash1, Address: address1}},
+			},
+		},
+		{
+			name: "Topic filtering - exact match",
+			allLogs: []etypes.Log{
+				{
+					BlockNumber: 100,
+					BlockHash:   blockHash1,
+					Address:     address1,
+					Topics:      []common.Hash{topic1, topic2},
+				},
+				{
+					BlockNumber: 100,
+					BlockHash:   blockHash1,
+					Address:     address1,
+					Topics:      []common.Hash{topic1, topic3},
+				},
+			},
+			queries: []ethereum.FilterQuery{
+				{
+					FromBlock: big.NewInt(90),
+					ToBlock:   big.NewInt(110),
+					Addresses: []common.Address{address1},
+					Topics:    [][]common.Hash{{topic1}, {topic2}},
+				},
+			},
+			expected: [][]etypes.Log{
+				{{
+					BlockNumber: 100,
+					BlockHash:   blockHash1,
+					Address:     address1,
+					Topics:      []common.Hash{topic1, topic2},
+				}},
+			},
+		},
+		{
+			name: "Topic filtering - wildcard support",
+			allLogs: []etypes.Log{
+				{
+					BlockNumber: 100,
+					BlockHash:   blockHash1,
+					Address:     address1,
+					Topics:      []common.Hash{topic1, topic2},
+				},
+				{
+					BlockNumber: 100,
+					BlockHash:   blockHash1,
+					Address:     address1,
+					Topics:      []common.Hash{topic1, topic3},
+				},
+			},
+			queries: []ethereum.FilterQuery{
+				{
+					FromBlock: big.NewInt(90),
+					ToBlock:   big.NewInt(110),
+					Addresses: []common.Address{address1},
+					Topics:    [][]common.Hash{{topic1}, nil}, // Second topic is wildcard
+				},
+			},
+			expected: [][]etypes.Log{
+				{
+					{
+						BlockNumber: 100,
+						BlockHash:   blockHash1,
+						Address:     address1,
+						Topics:      []common.Hash{topic1, topic2},
+					},
+					{
+						BlockNumber: 100,
+						BlockHash:   blockHash1,
+						Address:     address1,
+						Topics:      []common.Hash{topic1, topic3},
+					},
+				},
+			},
+		},
+		{
+			name: "Multiple address filtering",
+			allLogs: []etypes.Log{
+				{BlockNumber: 100, BlockHash: blockHash1, Address: address1},
+				{BlockNumber: 100, BlockHash: blockHash1, Address: address2},
+			},
+			queries: []ethereum.FilterQuery{
+				{
+					FromBlock: big.NewInt(90),
+					ToBlock:   big.NewInt(110),
+					Addresses: []common.Address{address1, address2},
+				},
+			},
+			expected: [][]etypes.Log{
+				{
+					{BlockNumber: 100, BlockHash: blockHash1, Address: address1},
+					{BlockNumber: 100, BlockHash: blockHash1, Address: address2},
+				},
+			},
+		},
+		{
+			name: "Nil block range conditions",
+			allLogs: []etypes.Log{
+				{BlockNumber: 100, BlockHash: blockHash1, Address: address1},
+				{BlockNumber: 200, BlockHash: blockHash1, Address: address1},
+			},
+			queries: []ethereum.FilterQuery{
+				{
+					FromBlock: nil, // No lower bound
+					ToBlock:   big.NewInt(150),
+					Addresses: []common.Address{address1},
+				},
+				{
+					FromBlock: big.NewInt(150),
+					ToBlock:   nil, // No upper bound
+					Addresses: []common.Address{address1},
+				},
+			},
+			expected: [][]etypes.Log{
+				{{BlockNumber: 100, BlockHash: blockHash1, Address: address1}},
+				{{BlockNumber: 200, BlockHash: blockHash1, Address: address1}},
+			},
+		},
+		{
+			name:    "Empty logs input",
+			allLogs: []etypes.Log{},
+			queries: []ethereum.FilterQuery{
+				{
+					FromBlock: big.NewInt(100),
+					ToBlock:   big.NewInt(200),
+					Addresses: []common.Address{address1},
+				},
+			},
+			expected: [][]etypes.Log{{}},
+		},
+		{
+			name: "No matching logs",
+			allLogs: []etypes.Log{
+				{BlockNumber: 100, BlockHash: blockHash1, Address: address1},
+			},
+			queries: []ethereum.FilterQuery{
+				{
+					FromBlock: big.NewInt(200),
+					ToBlock:   big.NewInt(300),
+					Addresses: []common.Address{address1},
+				},
+			},
+			expected: [][]etypes.Log{{}},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := distributeLogs(tt.allLogs, tt.queries)
+
+			// Compare the length first for better error messages
+			assert.Equal(t, len(tt.expected), len(result), "Number of query results mismatch")
+
+			for i := range result {
+				assert.Equal(t, len(tt.expected[i]), len(result[i]),
+					"Number of logs in query %d mismatch", i)
+
+				for j := range result[i] {
+					assert.Equal(t, tt.expected[i][j].BlockNumber, result[i][j].BlockNumber,
+						"BlockNumber mismatch in query %d, log %d", i, j)
+					assert.Equal(t, tt.expected[i][j].BlockHash, result[i][j].BlockHash,
+						"BlockHash mismatch in query %d, log %d", i, j)
+					assert.Equal(t, tt.expected[i][j].Address, result[i][j].Address,
+						"Address mismatch in query %d, log %d", i, j)
+
+					// Compare topics if they exist
+					if len(tt.expected[i][j].Topics) > 0 || len(result[i][j].Topics) > 0 {
+						assert.Equal(t, tt.expected[i][j].Topics, result[i][j].Topics,
+							"Topics mismatch in query %d, log %d", i, j)
+					}
+				}
+			}
+		})
+	}
+}
+
+// TestDistributeLogsEdgeCases tests edge cases and error conditions
+func TestDistributeLogsEdgeCases(t *testing.T) {
+	t.Run("Nil queries slice", func(t *testing.T) {
+		logs := []etypes.Log{{BlockNumber: 100}}
+		result := distributeLogs(logs, nil)
+		assert.Empty(t, result)
+	})
+
+	t.Run("Empty queries slice", func(t *testing.T) {
+		logs := []etypes.Log{{BlockNumber: 100}}
+		result := distributeLogs(logs, []ethereum.FilterQuery{})
+		assert.Empty(t, result)
+	})
+
+	t.Run("Nil block pointers in query", func(t *testing.T) {
+		logs := []etypes.Log{{BlockNumber: 100}}
+		queries := []ethereum.FilterQuery{
+			{
+				FromBlock: nil,
+				ToBlock:   nil,
+				Addresses: []common.Address{common.HexToAddress("0x1")},
+			},
+		}
+		result := distributeLogs(logs, queries)
+		assert.Len(t, result, 1)
+		assert.Len(t, result[0], 1)
+	})
+}
 
 func TestSplitFilterQuery(t *testing.T) {
 	testcases := []struct {

@@ -223,6 +223,29 @@ func (cs *ChainSubscriber) FilterLogs(ctx context.Context, q ethereum.FilterQuer
 	return
 }
 
+func (cs *ChainSubscriber) FilterLogsBatch(ctx context.Context, queries []ethereum.FilterQuery) (logs [][]etypes.Log, err error) {
+	// Merge queries to reduce the number of rpc calls.
+	mergedQueries, err := mergeFilterQueriesWithMaxAddressesPerQuery(queries, 5, true)
+	if err != nil {
+		return nil, err
+	}
+
+	// Filter logs for each merged query.
+	allLogs := []etypes.Log{}
+	for _, q := range mergedQueries {
+		ls, err := cs.FilterLogs(ctx, q)
+		if err != nil {
+			return nil, err
+		}
+
+		allLogs = append(allLogs, ls...)
+	}
+
+	// Distribute logs to each query.
+	logs = distributeLogs(allLogs, queries)
+	return
+}
+
 // TODO:
 // 3. cache all of finalized historical data, e.g., blockByHash, txByHash
 func (cs *ChainSubscriber) FilterLogsWithChannel(ctx context.Context, q ethereum.FilterQuery, logsChan chan<- etypes.Log, watch bool, closeOnExit bool) (err error) {

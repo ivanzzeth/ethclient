@@ -59,6 +59,8 @@ type QueryStateReader interface {
 	FilterLogs(ctx context.Context, q ethereum.FilterQuery) (logs []etypes.Log, err error)
 	// Report whether client can use `FilterLogs` in the storage instead of ethclient.FilterLogs
 	IsFilterLogsSupported(q ethereum.FilterQuery) bool
+
+	FilterLogsBatch(ctx context.Context, queries []ethereum.FilterQuery) (logs [][]etypes.Log, err error)
 }
 
 type QueryStateWriter interface {

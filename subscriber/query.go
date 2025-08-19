@@ -65,6 +65,72 @@ type QueryWithChannel struct {
 	out chan etypes.Log // channel to send logs to
 }
 
+func distributeLogs(allLogs []etypes.Log, queries []ethereum.FilterQuery) [][]etypes.Log {
+	logs := make([][]etypes.Log, len(queries))
+	for _, l := range allLogs {
+		for qi, q := range queries {
+			blockHashCondition := q.BlockHash != nil && l.BlockHash.Cmp(*q.BlockHash) == 0
+			fromBlockCondition := q.FromBlock == nil || l.BlockNumber >= q.FromBlock.Uint64()
+			toBlockCondition := q.ToBlock == nil || l.BlockNumber <= q.ToBlock.Uint64()
+			blockCondition := true
+			if q.BlockHash != nil {
+				blockCondition = blockHashCondition
+			} else {
+				blockCondition = fromBlockCondition && toBlockCondition
+			}
+
+			getTopicCondition := func(logTopic common.Hash, queryTopic []common.Hash) bool {
+				if len(queryTopic) == 0 {
+					return true
+				}
+
+				for _, t := range queryTopic {
+					if t.Cmp(logTopic) == 0 {
+						return true
+					}
+				}
+
+				return false
+			}
+
+			topicCondition := true
+			if len(l.Topics) > 0 {
+				topic0Condition := getTopicCondition(l.Topics[0], q.Topics[0])
+				topicCondition = topicCondition && topic0Condition
+			} else if len(q.Topics) > 0 && len(q.Topics[0]) > 0 {
+				topicCondition = false
+			}
+
+			if len(l.Topics) > 1 {
+				topic1Condition := getTopicCondition(l.Topics[1], q.Topics[1])
+				topicCondition = topicCondition && topic1Condition
+			} else if len(q.Topics) > 1 && len(q.Topics[1]) > 0 {
+				topicCondition = false
+			}
+
+			if len(l.Topics) > 2 {
+				topic2Condition := getTopicCondition(l.Topics[2], q.Topics[2])
+				topicCondition = topicCondition && topic2Condition
+			} else if len(q.Topics) > 2 && len(q.Topics[2]) > 0 {
+				topicCondition = false
+			}
+
+			if len(l.Topics) > 3 {
+				topic3Condition := getTopicCondition(l.Topics[3], q.Topics[3])
+				topicCondition = topicCondition && topic3Condition
+			} else if len(q.Topics) > 3 && len(q.Topics[3]) > 0 {
+				topicCondition = false
+			}
+
+			if blockCondition && topicCondition {
+				logs[qi] = append(logs[qi], l)
+			}
+		}
+	}
+
+	return logs
+}
+
 func splitFilterQuery(queryIncoming ethereum.FilterQuery, maxAddressesPerQuery int) (queries []ethereum.FilterQuery, err error) {
 	if maxAddressesPerQuery <= 0 {
 		return nil, fmt.Errorf("maxAddressesPerQuery must be positive")
