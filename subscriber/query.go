@@ -69,6 +69,19 @@ func distributeLogs(allLogs []etypes.Log, queries []ethereum.FilterQuery) [][]et
 	logs := make([][]etypes.Log, len(queries))
 	for _, l := range allLogs {
 		for qi, q := range queries {
+			// Address condition
+			addressCondition := true
+			if len(q.Addresses) > 0 {
+				addressCondition = false
+				for _, addr := range q.Addresses {
+					if addr == l.Address {
+						addressCondition = true
+						break
+					}
+				}
+			}
+
+			// Block condition
 			blockHashCondition := q.BlockHash != nil && l.BlockHash.Cmp(*q.BlockHash) == 0
 			fromBlockCondition := q.FromBlock == nil || l.BlockNumber >= q.FromBlock.Uint64()
 			toBlockCondition := q.ToBlock == nil || l.BlockNumber <= q.ToBlock.Uint64()
@@ -95,34 +108,42 @@ func distributeLogs(allLogs []etypes.Log, queries []ethereum.FilterQuery) [][]et
 
 			topicCondition := true
 			if len(l.Topics) > 0 {
-				topic0Condition := getTopicCondition(l.Topics[0], q.Topics[0])
-				topicCondition = topicCondition && topic0Condition
+				if len(q.Topics) > 0 {
+					topic0Condition := getTopicCondition(l.Topics[0], q.Topics[0])
+					topicCondition = topicCondition && topic0Condition
+				}
 			} else if len(q.Topics) > 0 && len(q.Topics[0]) > 0 {
 				topicCondition = false
 			}
 
 			if len(l.Topics) > 1 {
-				topic1Condition := getTopicCondition(l.Topics[1], q.Topics[1])
-				topicCondition = topicCondition && topic1Condition
+				if len(q.Topics) > 1 {
+					topic1Condition := getTopicCondition(l.Topics[1], q.Topics[1])
+					topicCondition = topicCondition && topic1Condition
+				}
 			} else if len(q.Topics) > 1 && len(q.Topics[1]) > 0 {
 				topicCondition = false
 			}
 
 			if len(l.Topics) > 2 {
-				topic2Condition := getTopicCondition(l.Topics[2], q.Topics[2])
-				topicCondition = topicCondition && topic2Condition
+				if len(q.Topics) > 2 {
+					topic2Condition := getTopicCondition(l.Topics[2], q.Topics[2])
+					topicCondition = topicCondition && topic2Condition
+				}
 			} else if len(q.Topics) > 2 && len(q.Topics[2]) > 0 {
 				topicCondition = false
 			}
 
 			if len(l.Topics) > 3 {
-				topic3Condition := getTopicCondition(l.Topics[3], q.Topics[3])
-				topicCondition = topicCondition && topic3Condition
+				if len(q.Topics) > 3 {
+					topic3Condition := getTopicCondition(l.Topics[3], q.Topics[3])
+					topicCondition = topicCondition && topic3Condition
+				}
 			} else if len(q.Topics) > 3 && len(q.Topics[3]) > 0 {
 				topicCondition = false
 			}
 
-			if blockCondition && topicCondition {
+			if addressCondition && blockCondition && topicCondition {
 				logs[qi] = append(logs[qi], l)
 			}
 		}
