@@ -2,6 +2,7 @@ package subscriber
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math/big"
 	"slices"
@@ -39,8 +40,13 @@ type ChainSubscriber struct {
 	blockConfirmationsOnSubscription uint64
 	storage                          SubscriberStorage
 
-	queryCtx           context.Context
-	cancelQueryCtx     context.CancelFunc
+	queryParentCtx       context.Context
+	cancelQueryParentCtx context.CancelFunc
+
+	queryContextMu        sync.Mutex
+	queryContextMap       sync.Map
+	queryCancelContextMap sync.Map
+
 	queryHandler       QueryHandler
 	queryMap           sync.Map
 	globalLogsChannels sync.Map
@@ -58,17 +64,17 @@ func NewChainSubscriber(rpcCli *rpc.Client, storage SubscriberStorage) (*ChainSu
 	queryCtx, cancel := context.WithCancel(context.Background())
 
 	subscriber := &ChainSubscriber{
-		c:                 c,
-		geth:              geth,
-		chainId:           chainId,
-		buffer:            consts.DefaultMsgBuffer,
-		blocksPerScan:     consts.DefaultBlocksPerScan,
-		currBlocksPerScan: consts.DefaultBlocksPerScan,
-		maxBlocksPerScan:  consts.MaxBlocksPerScan,
-		retryInterval:     consts.RetryInterval,
-		storage:           storage,
-		queryCtx:          queryCtx,
-		cancelQueryCtx:    cancel,
+		c:                    c,
+		geth:                 geth,
+		chainId:              chainId,
+		buffer:               consts.DefaultMsgBuffer,
+		blocksPerScan:        consts.DefaultBlocksPerScan,
+		currBlocksPerScan:    consts.DefaultBlocksPerScan,
+		maxBlocksPerScan:     consts.MaxBlocksPerScan,
+		retryInterval:        consts.RetryInterval,
+		storage:              storage,
+		queryParentCtx:       queryCtx,
+		cancelQueryParentCtx: cancel,
 	}
 
 	return subscriber, nil
@@ -76,7 +82,7 @@ func NewChainSubscriber(rpcCli *rpc.Client, storage SubscriberStorage) (*ChainSu
 
 func (s *ChainSubscriber) Close() {
 	log.Debug("close subscriber...")
-	s.cancelQueryCtx()
+	s.cancelQueryParentCtx()
 
 	// s.queryMap.Range(func(key, _ any) bool {
 	// 	queryHash := key.(common.Hash)
@@ -164,7 +170,9 @@ func (cs *ChainSubscriber) SubmitQuery(query ethereum.FilterQuery) error {
 
 	queryOnce.Do(func() {
 		for {
-			err := cs.FilterLogsWithChannel(cs.queryCtx, query, globalLogsChannel, true, true)
+			queryCtx, _ := cs.getQueryContext(queryHash)
+
+			err := cs.FilterLogsWithChannel(queryCtx, query, globalLogsChannel, true, true)
 			if err != nil {
 				log.Warn("submit query subscription failed, waiting for retrying", "err", err,
 					"queryHash", queryHash)
@@ -177,6 +185,27 @@ func (cs *ChainSubscriber) SubmitQuery(query ethereum.FilterQuery) error {
 
 		go cs.handleQueryLogsChannel(query, globalLogsChannel)
 	})
+
+	return nil
+}
+
+func (cs *ChainSubscriber) DeleteQuery(query ethereum.FilterQuery) error {
+	queryHash := GetQueryHash(cs.chainId, query)
+	log.Info("delete query", "queryHash", queryHash, "query", query, "client", fmt.Sprintf("%p", cs.c))
+	if !cs.isQueryHandlerSet() {
+		return fmt.Errorf("setup queryHandler before calling it")
+	}
+
+	_, loaded := cs.queryMap.LoadOrStore(queryHash, &sync.Once{})
+	if !loaded {
+		return fmt.Errorf("query has not submitted yet")
+	}
+
+	// Notify go routines exit
+	_, cancelCtx := cs.getQueryContext(queryHash)
+	cancelCtx()
+
+	cs.queryMap.Delete(queryHash)
 
 	return nil
 }
@@ -195,6 +224,20 @@ func (cs *ChainSubscriber) getQueryLogChannel(queryHash common.Hash) chan etypes
 	globalLogsChannel := ch.(chan etypes.Log)
 
 	return globalLogsChannel
+}
+
+func (cs *ChainSubscriber) getQueryContext(queryHash common.Hash) (context.Context, context.CancelFunc) {
+	cs.queryContextMu.Lock()
+	defer cs.queryContextMu.Unlock()
+
+	ctx, cancel := context.WithCancel(cs.queryParentCtx)
+	ctxVal, _ := cs.queryContextMap.LoadOrStore(queryHash, ctx)
+	cancelVal, _ := cs.queryCancelContextMap.LoadOrStore(queryHash, cancel)
+
+	ctx = ctxVal.(context.Context)
+	cancel = cancelVal.(context.CancelFunc)
+
+	return ctx, cancel
 }
 
 func (cs *ChainSubscriber) SubscribeFilterLogs(ctx context.Context, q ethereum.FilterQuery, ch chan<- etypes.Log) (sub ethereum.Subscription, err error) {
@@ -317,6 +360,9 @@ func (cs *ChainSubscriber) FilterLogsWithChannel(ctx context.Context, q ethereum
 		for {
 			lastBlock, err := cs.c.BlockNumber(ctx)
 			if err != nil {
+				if errors.Is(err, context.Canceled) {
+					return
+				}
 				log.Warn("Subscriber gets block number failed", "err", err)
 				time.Sleep(cs.retryInterval)
 				continue

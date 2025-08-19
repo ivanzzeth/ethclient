@@ -24,6 +24,7 @@ type Subscriber interface {
 
 	// Provided for handler submitting query.
 	SubmitQuery(query ethereum.FilterQuery) error
+	DeleteQuery(query ethereum.FilterQuery) error
 	SubscribeNewHead(ctx context.Context, ch chan<- *etypes.Header) (ethereum.Subscription, error)
 	SubscribeFilterFullTransactions(ctx context.Context, filter FilterTransaction, ch chan<- *etypes.Transaction) (ethereum.Subscription, error)
 	// SubscribeFullPendingTransactions subscribes to new pending transactions.
