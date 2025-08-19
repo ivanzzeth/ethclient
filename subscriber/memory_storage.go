@@ -46,6 +46,10 @@ func (s *MemoryStorage) IsFilterLogsSupported(q ethereum.FilterQuery) bool {
 	return false
 }
 
+func (s *MemoryStorage) FilterLogsBatch(ctx context.Context, queries []ethereum.FilterQuery) (logs [][]types.Log, err error) {
+	return nil, fmt.Errorf("not implemented")
+}
+
 func (s *MemoryStorage) SaveLatestBlockForQuery(ctx context.Context, query ethereum.FilterQuery, blockNum uint64) error {
 	log.Debug("SaveLatestBlockForQuery in memory", "query", query, "blockNum", blockNum)
 	s.blockMap.Store(GetQueryKey(s.chainId, query), blockNum)

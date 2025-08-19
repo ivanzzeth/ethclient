@@ -101,6 +101,10 @@ func (s *RedisStorage) IsFilterLogsSupported(q ethereum.FilterQuery) bool {
 	return false
 }
 
+func (s *RedisStorage) FilterLogsBatch(ctx context.Context, queries []ethereum.FilterQuery) (logs [][]types.Log, err error) {
+	return nil, fmt.Errorf("not implemented")
+}
+
 func (s *RedisStorage) SaveLatestBlockForQuery(ctx context.Context, query ethereum.FilterQuery, blockNum uint64) error {
 	conn, err := s.redisPool.Get(ctx)
 	if err != nil {
