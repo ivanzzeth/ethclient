@@ -39,6 +39,17 @@ func GetQueryHash(chainId *big.Int, query ethereum.FilterQuery) common.Hash {
 		ethereum.FilterQuery
 	}
 
+	// Ordering addresses for consistent hash
+	slices.SortFunc(query.Addresses, func(a, b common.Address) int {
+		if a.Hex() < b.Hex() {
+			return -1
+		}
+		if a.Hex() > b.Hex() {
+			return 1
+		}
+		return 0
+	})
+
 	var obj js = js{
 		ChainId:     chainId.String(),
 		FilterQuery: query,
@@ -66,6 +77,30 @@ func splitFilterQuery(queryIncoming ethereum.FilterQuery, maxAddressesPerQuery i
 	}
 
 	return queries, nil
+}
+
+func mergeFilterQueriesWithMaxAddressesPerQuery(queries []ethereum.FilterQuery, maxAddressesPerQuery int, mergeOverlappingBlockRange bool) (queriesOut []ethereum.FilterQuery, err error) {
+	var tmpQueries []ethereum.FilterQuery
+	tmpQueries, err = mergeFilterQueries(queries, mergeOverlappingBlockRange)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, q := range tmpQueries {
+		if len(q.Addresses) <= maxAddressesPerQuery {
+			queriesOut = append(queriesOut, q)
+			continue
+		}
+
+		queriesAfterSplit, err := splitFilterQuery(q, maxAddressesPerQuery)
+		if err != nil {
+			return nil, err
+		}
+
+		queriesOut = append(queriesOut, queriesAfterSplit...)
+	}
+
+	return queriesOut, nil
 }
 
 // Pacts multiple queries into one as many as possible
