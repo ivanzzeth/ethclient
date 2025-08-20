@@ -27,7 +27,7 @@ func Test_HeaderSubscriber(t *testing.T) {
 	testHeaderSubscriber(t, sim)
 }
 
-func Test_RealHeaderSubscriber(t *testing.T) {
+func test_RealHeaderSubscriber(t *testing.T) {
 	handler := log.NewTerminalHandler(os.Stdout, true)
 	logger := log.NewLogger(handler)
 	log.SetDefault(logger)

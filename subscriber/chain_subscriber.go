@@ -50,6 +50,8 @@ type ChainSubscriber struct {
 	queryHandler       QueryHandler
 	queryMap           sync.Map
 	globalLogsChannels sync.Map
+
+	lastBlockAtomic atomic.Uint64
 }
 
 // NewChainSubscriber .
@@ -76,6 +78,23 @@ func NewChainSubscriber(rpcCli *rpc.Client, storage SubscriberStorage) (*ChainSu
 		queryParentCtx:       queryCtx,
 		cancelQueryParentCtx: cancel,
 	}
+
+	go func() {
+		for {
+			lastBlock, err := subscriber.c.BlockNumber(context.Background())
+			if err != nil {
+				if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || errors.Is(err, rpc.ErrClientQuit) {
+					return
+				}
+				log.Warn("Subscriber gets block number failed", "err", err)
+				time.Sleep(subscriber.retryInterval)
+				continue
+			}
+
+			subscriber.lastBlockAtomic.Store(lastBlock)
+			time.Sleep(subscriber.retryInterval)
+		}
+	}()
 
 	return subscriber, nil
 }
@@ -354,25 +373,6 @@ func (cs *ChainSubscriber) FilterLogsWithChannel(ctx context.Context, q ethereum
 		"blocksPerScan", cs.blocksPerScan, "currBlocksPerScan", cs.currBlocksPerScan,
 		"from", fromBlock, "to", toBlock, "startBlock", startBlock, "endBlock", endBlock)
 
-	var lastBlockAtomic atomic.Uint64
-
-	go func() {
-		for {
-			lastBlock, err := cs.c.BlockNumber(ctx)
-			if err != nil {
-				if errors.Is(err, context.Canceled) {
-					return
-				}
-				log.Warn("Subscriber gets block number failed", "err", err)
-				time.Sleep(cs.retryInterval)
-				continue
-			}
-
-			lastBlockAtomic.Store(lastBlock)
-			time.Sleep(cs.retryInterval)
-		}
-	}()
-
 	reduceBlocksPerScan := false
 
 	updateScan := func() {
@@ -409,7 +409,7 @@ func (cs *ChainSubscriber) FilterLogsWithChannel(ctx context.Context, q ethereum
 				close(logsChan)
 				return
 			default:
-				lastBlock := lastBlockAtomic.Load()
+				lastBlock := cs.lastBlockAtomic.Load()
 				if lastBlock == 0 {
 					time.Sleep(cs.retryInterval)
 					continue Scan
