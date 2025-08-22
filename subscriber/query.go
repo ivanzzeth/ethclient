@@ -51,6 +51,23 @@ func GetQueryHash(chainId *big.Int, query ethereum.FilterQuery) common.Hash {
 		return 0
 	})
 
+	// Ordering topics for consistent hash
+	for _, topicGroup := range query.Topics {
+		slices.SortFunc(topicGroup, func(a, b common.Hash) int {
+			if a.Hex() < b.Hex() {
+				return -1
+			}
+			if a.Hex() > b.Hex() {
+				return 1
+			}
+			return 0
+		})
+	}
+
+	if len(query.Topics) == 0 || len(query.Topics[0]) == 0 {
+		query.Topics = [][]common.Hash{{}}
+	}
+
 	var obj js = js{
 		ChainId:     chainId.String(),
 		FilterQuery: query,

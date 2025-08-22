@@ -3,6 +3,7 @@ package subscriber
 import (
 	"fmt"
 	"math/big"
+	"strings"
 	"testing"
 
 	"github.com/ethereum/go-ethereum"
@@ -1762,4 +1763,438 @@ func shouldSwap(a, b ethereum.FilterQuery) bool {
 	}
 
 	return false
+}
+
+// TestGetQueryHash tests the GetQueryHash function with various scenarios
+func TestGetQueryHash(t *testing.T) {
+	// Test data
+	chainId1 := big.NewInt(1)
+	chainId2 := big.NewInt(137)
+	address1 := common.HexToAddress("0x742d35Cc6634C893292Ce8bB6239C002Ad8e6b59")
+	address2 := common.HexToAddress("0x853d43Cc6634C893292Ce8bB6239C002Ad8e6b60")
+	address3 := common.HexToAddress("0x964d51Dd6634C893292Ce8bB6239C002Ad8e6b71")
+	topic1 := common.HexToHash("0xabc123def456abc123def456abc123def456abc123def456abc123def456abc1")
+	topic2 := common.HexToHash("0xdef456abc123def456abc123def456abc123def456abc123def456abc123def4")
+	topic3 := common.HexToHash("0x123abc456def123abc456def123abc456def123abc456def123abc456def123a")
+	blockHash1 := common.HexToHash("0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef")
+
+	tests := []struct {
+		name     string
+		chainId  *big.Int
+		query    ethereum.FilterQuery
+		expected common.Hash
+	}{
+		{
+			name:    "Basic query with single address and topic",
+			chainId: chainId1,
+			query: ethereum.FilterQuery{
+				FromBlock: big.NewInt(100),
+				ToBlock:   big.NewInt(200),
+				Addresses: []common.Address{address1},
+				Topics:    [][]common.Hash{{topic1}},
+			},
+		},
+		{
+			name:    "Query with multiple addresses",
+			chainId: chainId1,
+			query: ethereum.FilterQuery{
+				FromBlock: big.NewInt(100),
+				ToBlock:   big.NewInt(200),
+				Addresses: []common.Address{address2, address1, address3}, // Will be sorted
+				Topics:    [][]common.Hash{{topic1}},
+			},
+		},
+		{
+			name:    "Query with multiple topics",
+			chainId: chainId1,
+			query: ethereum.FilterQuery{
+				FromBlock: big.NewInt(100),
+				ToBlock:   big.NewInt(200),
+				Addresses: []common.Address{address1},
+				Topics:    [][]common.Hash{{topic2, topic1, topic3}}, // Will be sorted
+			},
+		},
+		{
+			name:    "Query with complex topic structure",
+			chainId: chainId1,
+			query: ethereum.FilterQuery{
+				FromBlock: big.NewInt(100),
+				ToBlock:   big.NewInt(200),
+				Addresses: []common.Address{address1},
+				Topics: [][]common.Hash{
+					{topic1},
+					{topic2, topic3},
+					{topic1, topic2},
+				},
+			},
+		},
+		{
+			name:    "Query with block hash",
+			chainId: chainId1,
+			query: ethereum.FilterQuery{
+				BlockHash: &blockHash1,
+				Addresses: []common.Address{address1},
+				Topics:    [][]common.Hash{{topic1}},
+			},
+		},
+		{
+			name:    "Query with nil block range",
+			chainId: chainId1,
+			query: ethereum.FilterQuery{
+				FromBlock: nil,
+				ToBlock:   nil,
+				Addresses: []common.Address{address1},
+				Topics:    [][]common.Hash{{topic1}},
+			},
+		},
+		{
+			name:    "Query with empty addresses",
+			chainId: chainId1,
+			query: ethereum.FilterQuery{
+				FromBlock: big.NewInt(100),
+				ToBlock:   big.NewInt(200),
+				Addresses: []common.Address{},
+				Topics:    [][]common.Hash{{topic1}},
+			},
+		},
+		{
+			name:    "Query with nil addresses",
+			chainId: chainId1,
+			query: ethereum.FilterQuery{
+				FromBlock: big.NewInt(100),
+				ToBlock:   big.NewInt(200),
+				Addresses: nil,
+				Topics:    [][]common.Hash{{topic1}},
+			},
+		},
+		{
+			name:    "Query with empty topics",
+			chainId: chainId1,
+			query: ethereum.FilterQuery{
+				FromBlock: big.NewInt(100),
+				ToBlock:   big.NewInt(200),
+				Addresses: []common.Address{address1},
+				Topics:    [][]common.Hash{},
+			},
+		},
+		{
+			name:    "Query with nil topics",
+			chainId: chainId1,
+			query: ethereum.FilterQuery{
+				FromBlock: big.NewInt(100),
+				ToBlock:   big.NewInt(200),
+				Addresses: []common.Address{address1},
+				Topics:    nil,
+			},
+		},
+		{
+			name:    "Query with empty topic group",
+			chainId: chainId1,
+			query: ethereum.FilterQuery{
+				FromBlock: big.NewInt(100),
+				ToBlock:   big.NewInt(200),
+				Addresses: []common.Address{address1},
+				Topics:    [][]common.Hash{{}},
+			},
+		},
+		{
+			name:    "Query with wildcard topics",
+			chainId: chainId1,
+			query: ethereum.FilterQuery{
+				FromBlock: big.NewInt(100),
+				ToBlock:   big.NewInt(200),
+				Addresses: []common.Address{address1},
+				Topics: [][]common.Hash{
+					{topic1},
+					nil, // Wildcard
+					{topic2},
+				},
+			},
+		},
+		{
+			name:    "Different chain ID",
+			chainId: chainId2,
+			query: ethereum.FilterQuery{
+				FromBlock: big.NewInt(100),
+				ToBlock:   big.NewInt(200),
+				Addresses: []common.Address{address1},
+				Topics:    [][]common.Hash{{topic1}},
+			},
+		},
+		{
+			name:    "Minimal query",
+			chainId: chainId1,
+			query:   ethereum.FilterQuery{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			hash := GetQueryHash(tt.chainId, tt.query)
+
+			// Verify hash is not zero
+			assert.NotEqual(t, common.Hash{}, hash, "Hash should not be zero")
+
+			// Verify hash is consistent (same input should produce same hash)
+			hash2 := GetQueryHash(tt.chainId, tt.query)
+			assert.Equal(t, hash, hash2, "Hash should be consistent for same input")
+		})
+	}
+}
+
+// TestGetQueryHashConsistency tests that the hash is consistent regardless of input order
+func TestGetQueryHashConsistency(t *testing.T) {
+	chainId := big.NewInt(1)
+	address1 := common.HexToAddress("0x742d35Cc6634C893292Ce8bB6239C002Ad8e6b59")
+	address2 := common.HexToAddress("0x853d43Cc6634C893292Ce8bB6239C002Ad8e6b60")
+	address3 := common.HexToAddress("0x964d51Dd6634C893292Ce8bB6239C002Ad8e6b71")
+	topic1 := common.HexToHash("0xabc123def456abc123def456abc123def456abc123def456abc123def456abc1")
+	topic2 := common.HexToHash("0xdef456abc123def456abc123def456abc123def456abc123def456abc123def4")
+	topic3 := common.HexToHash("0x123abc456def123abc456def123abc456def123abc456def123abc456def123a")
+
+	tests := []struct {
+		name     string
+		query1   ethereum.FilterQuery
+		query2   ethereum.FilterQuery
+		expected bool // true if hashes should be equal
+	}{
+		{
+			name: "Same addresses in different order",
+			query1: ethereum.FilterQuery{
+				FromBlock: big.NewInt(100),
+				ToBlock:   big.NewInt(200),
+				Addresses: []common.Address{address1, address2, address3},
+				Topics:    [][]common.Hash{{topic1}},
+			},
+			query2: ethereum.FilterQuery{
+				FromBlock: big.NewInt(100),
+				ToBlock:   big.NewInt(200),
+				Addresses: []common.Address{address3, address1, address2}, // Different order
+				Topics:    [][]common.Hash{{topic1}},
+			},
+			expected: true,
+		},
+		{
+			name: "Same topics in different order",
+			query1: ethereum.FilterQuery{
+				FromBlock: big.NewInt(100),
+				ToBlock:   big.NewInt(200),
+				Addresses: []common.Address{address1},
+				Topics:    [][]common.Hash{{topic1, topic2, topic3}},
+			},
+			query2: ethereum.FilterQuery{
+				FromBlock: big.NewInt(100),
+				ToBlock:   big.NewInt(200),
+				Addresses: []common.Address{address1},
+				Topics:    [][]common.Hash{{topic3, topic1, topic2}}, // Different order
+			},
+			expected: true,
+		},
+		{
+			name: "Different addresses",
+			query1: ethereum.FilterQuery{
+				FromBlock: big.NewInt(100),
+				ToBlock:   big.NewInt(200),
+				Addresses: []common.Address{address1, address2},
+				Topics:    [][]common.Hash{{topic1}},
+			},
+			query2: ethereum.FilterQuery{
+				FromBlock: big.NewInt(100),
+				ToBlock:   big.NewInt(200),
+				Addresses: []common.Address{address1, address3}, // Different address
+				Topics:    [][]common.Hash{{topic1}},
+			},
+			expected: false,
+		},
+		{
+			name: "Different topics",
+			query1: ethereum.FilterQuery{
+				FromBlock: big.NewInt(100),
+				ToBlock:   big.NewInt(200),
+				Addresses: []common.Address{address1},
+				Topics:    [][]common.Hash{{topic1, topic2}},
+			},
+			query2: ethereum.FilterQuery{
+				FromBlock: big.NewInt(100),
+				ToBlock:   big.NewInt(200),
+				Addresses: []common.Address{address1},
+				Topics:    [][]common.Hash{{topic1, topic3}}, // Different topic
+			},
+			expected: false,
+		},
+		{
+			name: "Different block range",
+			query1: ethereum.FilterQuery{
+				FromBlock: big.NewInt(100),
+				ToBlock:   big.NewInt(200),
+				Addresses: []common.Address{address1},
+				Topics:    [][]common.Hash{{topic1}},
+			},
+			query2: ethereum.FilterQuery{
+				FromBlock: big.NewInt(100),
+				ToBlock:   big.NewInt(300), // Different ToBlock
+				Addresses: []common.Address{address1},
+				Topics:    [][]common.Hash{{topic1}},
+			},
+			expected: false,
+		},
+		{
+			name: "Empty vs nil addresses",
+			query1: ethereum.FilterQuery{
+				FromBlock: big.NewInt(100),
+				ToBlock:   big.NewInt(200),
+				Addresses: []common.Address{},
+				Topics:    [][]common.Hash{{topic1}},
+			},
+			query2: ethereum.FilterQuery{
+				FromBlock: big.NewInt(100),
+				ToBlock:   big.NewInt(200),
+				Addresses: nil,
+				Topics:    [][]common.Hash{{topic1}},
+			},
+			expected: false, // Empty slice and nil are different in JSON
+		},
+		{
+			name: "Empty vs nil topics",
+			query1: ethereum.FilterQuery{
+				FromBlock: big.NewInt(100),
+				ToBlock:   big.NewInt(200),
+				Addresses: []common.Address{address1},
+				Topics:    [][]common.Hash{},
+			},
+			query2: ethereum.FilterQuery{
+				FromBlock: big.NewInt(100),
+				ToBlock:   big.NewInt(200),
+				Addresses: []common.Address{address1},
+				Topics:    nil,
+			},
+			expected: true, // Both empty and nil topics get normalized to [[]common.Hash{{}}]
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			hash1 := GetQueryHash(chainId, tt.query1)
+			hash2 := GetQueryHash(chainId, tt.query2)
+
+			if tt.expected {
+				assert.Equal(t, hash1, hash2, "Hashes should be equal")
+			} else {
+				assert.NotEqual(t, hash1, hash2, "Hashes should be different")
+			}
+		})
+	}
+}
+
+// TestGetQueryHashEdgeCases tests edge cases and boundary conditions
+func TestGetQueryHashEdgeCases(t *testing.T) {
+	chainId := big.NewInt(1)
+	address1 := common.HexToAddress("0x742d35Cc6634C893292Ce8bB6239C002Ad8e6b59")
+	topic1 := common.HexToHash("0xabc123def456abc123def456abc123def456abc123def456abc123def456abc1")
+
+	tests := []struct {
+		name    string
+		chainId *big.Int
+		query   ethereum.FilterQuery
+	}{
+		{
+			name:    "Nil chain ID",
+			chainId: nil,
+			query: ethereum.FilterQuery{
+				FromBlock: big.NewInt(100),
+				ToBlock:   big.NewInt(200),
+				Addresses: []common.Address{address1},
+				Topics:    [][]common.Hash{{topic1}},
+			},
+		},
+		{
+			name:    "Zero chain ID",
+			chainId: big.NewInt(0),
+			query: ethereum.FilterQuery{
+				FromBlock: big.NewInt(100),
+				ToBlock:   big.NewInt(200),
+				Addresses: []common.Address{address1},
+				Topics:    [][]common.Hash{{topic1}},
+			},
+		},
+		{
+			name:    "Very large chain ID",
+			chainId: big.NewInt(0).Lsh(big.NewInt(1), 256), // 2^256
+			query: ethereum.FilterQuery{
+				FromBlock: big.NewInt(100),
+				ToBlock:   big.NewInt(200),
+				Addresses: []common.Address{address1},
+				Topics:    [][]common.Hash{{topic1}},
+			},
+		},
+		{
+			name:    "Nil block pointers",
+			chainId: chainId,
+			query: ethereum.FilterQuery{
+				FromBlock: nil,
+				ToBlock:   nil,
+				Addresses: []common.Address{address1},
+				Topics:    [][]common.Hash{{topic1}},
+			},
+		},
+		{
+			name:    "Very large block numbers",
+			chainId: chainId,
+			query: ethereum.FilterQuery{
+				FromBlock: big.NewInt(0).Lsh(big.NewInt(1), 64), // 2^64
+				ToBlock:   big.NewInt(0).Lsh(big.NewInt(1), 64).Add(big.NewInt(0).Lsh(big.NewInt(1), 64), big.NewInt(1000)),
+				Addresses: []common.Address{address1},
+				Topics:    [][]common.Hash{{topic1}},
+			},
+		},
+		{
+			name:    "Empty query with nil chain ID",
+			chainId: nil,
+			query:   ethereum.FilterQuery{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			hash := GetQueryHash(tt.chainId, tt.query)
+
+			// Verify hash is not zero (even for edge cases)
+			assert.NotEqual(t, common.Hash{}, hash, "Hash should not be zero")
+
+			// Verify hash is consistent
+			hash2 := GetQueryHash(tt.chainId, tt.query)
+			assert.Equal(t, hash, hash2, "Hash should be consistent for same input")
+		})
+	}
+}
+
+// TestGetQueryKey tests the GetQueryKey function
+func TestGetQueryKey(t *testing.T) {
+	chainId := big.NewInt(1)
+	address1 := common.HexToAddress("0x742d35Cc6634C893292Ce8bB6239C002Ad8e6b59")
+	topic1 := common.HexToHash("0xabc123def456abc123def456abc123def456abc123def456abc123def456abc1")
+
+	query := ethereum.FilterQuery{
+		FromBlock: big.NewInt(100),
+		ToBlock:   big.NewInt(200),
+		Addresses: []common.Address{address1},
+		Topics:    [][]common.Hash{{topic1}},
+	}
+
+	key := GetQueryKey(chainId, query)
+
+	// Verify key is not empty
+	assert.NotEmpty(t, key, "Query key should not be empty")
+
+	// Verify key starts with "0x" (hex format)
+	assert.True(t, strings.HasPrefix(key, "0x"), "Query key should start with 0x")
+
+	// Verify key is consistent
+	key2 := GetQueryKey(chainId, query)
+	assert.Equal(t, key, key2, "Query key should be consistent for same input")
+
+	// Verify key is the hex representation of the hash
+	hash := GetQueryHash(chainId, query)
+	expectedKey := hash.Hex()
+	assert.Equal(t, expectedKey, key, "Query key should be the hex representation of the hash")
 }
