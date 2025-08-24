@@ -368,11 +368,12 @@ func (cs *ChainSubscriber) FilterLogsWithChannel(ctx context.Context, q ethereum
 		}
 	}
 
-	endBlock := startBlock + cs.currBlocksPerScan
+	currBlocksPerScan := cs.currBlocksPerScan // Use local variable instead of shared state
+	endBlock := startBlock + currBlocksPerScan
 
 	query := NewQuery(cs.chainId, q)
 	log.Debug("Subscriber FilterLogs starts", "queryHash", query.Hash(), "client", fmt.Sprintf("%p", cs.c),
-		"blocksPerScan", cs.blocksPerScan, "currBlocksPerScan", cs.currBlocksPerScan,
+		"blocksPerScan", cs.blocksPerScan, "currBlocksPerScan", currBlocksPerScan,
 		"from", fromBlock, "to", toBlock, "startBlock", startBlock, "endBlock", endBlock)
 
 	reduceBlocksPerScan := false
@@ -390,15 +391,15 @@ func (cs *ChainSubscriber) FilterLogsWithChannel(ctx context.Context, q ethereum
 		// endBlock => 1200+400 = 1600
 		if reduceBlocksPerScan {
 			reduceBlocksPerScan = false
-			blocksPerScanToDebase := cs.currBlocksPerScan - cs.blocksPerScan
-			cs.currBlocksPerScan = cs.blocksPerScan
+			blocksPerScanToDebase := currBlocksPerScan - cs.blocksPerScan
+			currBlocksPerScan = cs.blocksPerScan
 			endBlock -= blocksPerScanToDebase
 		} else {
-			cs.currBlocksPerScan *= 2
-			if cs.currBlocksPerScan > cs.maxBlocksPerScan {
-				cs.currBlocksPerScan = cs.maxBlocksPerScan
+			currBlocksPerScan *= 2
+			if currBlocksPerScan > cs.maxBlocksPerScan {
+				currBlocksPerScan = cs.maxBlocksPerScan
 			}
-			startBlock, endBlock = endBlock+1, endBlock+cs.currBlocksPerScan
+			startBlock, endBlock = endBlock+1, endBlock+currBlocksPerScan
 		}
 	}
 
@@ -431,6 +432,7 @@ func (cs *ChainSubscriber) FilterLogsWithChannel(ctx context.Context, q ethereum
 
 				if startBlock > toBlock || (watch && startBlock > lastBlock) {
 					if !watch {
+						// For non-watch mode, we should only scan once and then exit
 						break Scan
 					}
 
@@ -458,7 +460,7 @@ func (cs *ChainSubscriber) FilterLogsWithChannel(ctx context.Context, q ethereum
 				}
 
 				log.Info("Subscriber FilterLogs starts filtering logs", "client", fmt.Sprintf("%p", cs.c), "queryHash", query.Hash(),
-					"currBlocksPerScan", cs.currBlocksPerScan, "blocksPerScan", cs.blocksPerScan,
+					"currBlocksPerScan", currBlocksPerScan, "blocksPerScan", cs.blocksPerScan,
 					"from", startBlock, "to", endBlock, "latest", lastBlock)
 
 				filterQuery := ethereum.FilterQuery{
