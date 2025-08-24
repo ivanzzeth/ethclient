@@ -368,7 +368,7 @@ func (cs *ChainSubscriber) FilterLogsWithChannel(ctx context.Context, q ethereum
 		}
 	}
 
-	currBlocksPerScan := cs.currBlocksPerScan // Use local variable instead of shared state
+	currBlocksPerScan := cs.blocksPerScan // Use blocksPerScan as initial value for local state
 	endBlock := startBlock + currBlocksPerScan
 
 	query := NewQuery(cs.chainId, q)
