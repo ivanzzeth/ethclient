@@ -346,6 +346,13 @@ func (cs *ChainSubscriber) FilterLogsWithChannel(ctx context.Context, q ethereum
 		}
 	}
 
+	{
+		lastBlock := cs.lastBlockAtomic.Load()
+		if !watch && (lastBlock < fromBlock || lastBlock < toBlock) {
+			return fmt.Errorf("lastBlock %d is less than fromBlock %d or toBlock %d", lastBlock, fromBlock, toBlock)
+		}
+	}
+
 	useStorage := q.ToBlock == nil
 	var queryStateReader QueryStateReader = cs.storage
 	var queryStateWriter QueryStateWriter = cs.storage
@@ -452,6 +459,13 @@ func (cs *ChainSubscriber) FilterLogsWithChannel(ctx context.Context, q ethereum
 						time.Sleep(cs.retryInterval)
 						continue Scan
 					}
+				}
+				if startBlock > lastBlock {
+					log.Debug("Subscriber FilterLogs waits for new block generated", "client", fmt.Sprintf("%p", cs.c),
+						"queryHash", query.Hash(), "lastBlock", lastBlock, "startBlock", startBlock,
+						"confirmations", cs.blockConfirmationsOnSubscription)
+					time.Sleep(cs.retryInterval)
+					continue Scan
 				}
 				if endBlock < startBlock {
 					endBlock = startBlock
