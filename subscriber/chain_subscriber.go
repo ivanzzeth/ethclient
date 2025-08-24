@@ -271,7 +271,9 @@ func (cs *ChainSubscriber) SubscribeFilterLogs(ctx context.Context, q ethereum.F
 
 func (cs *ChainSubscriber) FilterLogs(ctx context.Context, q ethereum.FilterQuery) (logs []etypes.Log, err error) {
 	logsChan := make(chan etypes.Log, cs.buffer)
-	err = cs.FilterLogsWithChannel(ctx, q, logsChan, false, true)
+	filterCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	err = cs.FilterLogsWithChannel(filterCtx, q, logsChan, false, true)
 	if err != nil {
 		return nil, err
 	}

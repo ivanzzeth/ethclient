@@ -2070,6 +2070,22 @@ func TestGetQueryHashConsistency(t *testing.T) {
 			},
 			expected: true, // Both empty and nil topics get normalized to [[]common.Hash{{}}]
 		},
+		{
+			name: "Empty vs nil topics2",
+			query1: ethereum.FilterQuery{
+				FromBlock: big.NewInt(100),
+				ToBlock:   big.NewInt(200),
+				Addresses: []common.Address{address1},
+				Topics:    [][]common.Hash{{}},
+			},
+			query2: ethereum.FilterQuery{
+				FromBlock: big.NewInt(100),
+				ToBlock:   big.NewInt(200),
+				Addresses: []common.Address{address1},
+				Topics:    nil,
+			},
+			expected: true, // Both empty and nil topics get normalized to [[]common.Hash{{}}]
+		},
 	}
 
 	for _, tt := range tests {
