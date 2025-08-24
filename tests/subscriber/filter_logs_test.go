@@ -834,3 +834,141 @@ func testFilterLogsCurrBlocksPerScanLeak(t *testing.T, sim *simulated.Backend) {
 
 	t.Log("currBlocksPerScan leak test completed - check logs for increasing currBlocksPerScan values")
 }
+
+func Test_FilterLogs_StartBlockGreaterThanToBlock(t *testing.T) {
+	handler := log.NewTerminalHandler(os.Stdout, true)
+	logger := log.NewLogger(handler)
+	log.SetDefault(logger)
+
+	sim := helper.SetUpClient(t)
+	defer sim.Close()
+
+	testFilterLogsStartBlockGreaterThanToBlock(t, sim)
+}
+
+func testFilterLogsStartBlockGreaterThanToBlock(t *testing.T, sim *simulated.Backend) {
+	client := sim.Client()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// Deploy Test contract
+	contractAddr, _, contract := helper.DeployTestContract(t, ctx, sim)
+
+	// Get current block number
+	fromBlock, err := client.BlockNumber(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Generate some logs first
+	arg1 := "hello"
+	arg2 := big.NewInt(100)
+	arg3 := []byte("world")
+
+	opts, err := client.MessageToTransactOpts(ctx, message.Request{
+		From: helper.Addr1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	contractCallTx, err := contract.TestFunc1(opts, arg1, arg2, arg3)
+	if err != nil {
+		t.Fatalf("TestFunc1 err: %v", err)
+	}
+
+	sim.CommitAndExpectTx(contractCallTx.Hash())
+
+	t.Log("=== Testing startBlock > toBlock infinite loop ===")
+
+	// Create a query with a very high fromBlock that will be greater than current toBlock
+	// This should trigger the startBlock > toBlock condition
+	query := ethereum.FilterQuery{
+		FromBlock: big.NewInt(0).SetUint64(fromBlock + 1000), // Very high fromBlock
+		ToBlock:   big.NewInt(0).SetUint64(fromBlock + 1),    // Low toBlock
+		Addresses: []common.Address{contractAddr},
+	}
+
+	t.Logf("Query: fromBlock=%d, toBlock=%d", query.FromBlock.Uint64(), query.ToBlock.Uint64())
+
+	// This should not cause an infinite loop
+	filteredLogs, err := client.FilterLogs(ctx, query)
+	if err != nil {
+		t.Fatalf("FilterLogs err: %v", err)
+	}
+	t.Logf("Got %d logs", len(filteredLogs))
+
+	// Wait a bit to see if any goroutines are still running
+	time.Sleep(2 * time.Second)
+
+	t.Log("startBlock > toBlock test completed - check logs for any infinite loops")
+}
+
+func Test_FilterLogs_StartBlockGreaterThanToBlock_WatchMode(t *testing.T) {
+	handler := log.NewTerminalHandler(os.Stdout, true)
+	logger := log.NewLogger(handler)
+	log.SetDefault(logger)
+
+	sim := helper.SetUpClient(t)
+	defer sim.Close()
+
+	testFilterLogsStartBlockGreaterThanToBlockWatchMode(t, sim)
+}
+
+func testFilterLogsStartBlockGreaterThanToBlockWatchMode(t *testing.T, sim *simulated.Backend) {
+	client := sim.Client()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// Deploy Test contract
+	contractAddr, _, contract := helper.DeployTestContract(t, ctx, sim)
+
+	// Get current block number
+	fromBlock, err := client.BlockNumber(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Generate some logs first
+	arg1 := "hello"
+	arg2 := big.NewInt(100)
+	arg3 := []byte("world")
+
+	opts, err := client.MessageToTransactOpts(ctx, message.Request{
+		From: helper.Addr1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	contractCallTx, err := contract.TestFunc1(opts, arg1, arg2, arg3)
+	if err != nil {
+		t.Fatalf("TestFunc1 err: %v", err)
+	}
+
+	sim.CommitAndExpectTx(contractCallTx.Hash())
+
+	t.Log("=== Testing startBlock > toBlock in watch mode ===")
+
+	// Create a query with ToBlock=nil to trigger watch mode
+	// This should not cause an infinite loop even if startBlock > toBlock
+	query := ethereum.FilterQuery{
+		FromBlock: big.NewInt(0).SetUint64(fromBlock + 1000), // Very high fromBlock
+		ToBlock:   nil,                                       // This triggers watch mode
+		Addresses: []common.Address{contractAddr},
+	}
+
+	t.Logf("Query: fromBlock=%d, toBlock=nil (watch mode)", query.FromBlock.Uint64())
+
+	// This should not cause an infinite loop
+	filteredLogs, err := client.FilterLogs(ctx, query)
+	if err != nil {
+		t.Fatalf("FilterLogs err: %v", err)
+	}
+	t.Logf("Got %d logs", len(filteredLogs))
+
+	// Wait a bit to see if any goroutines are still running
+	time.Sleep(3 * time.Second)
+
+	t.Log("startBlock > toBlock watch mode test completed - check logs for any infinite loops")
+}

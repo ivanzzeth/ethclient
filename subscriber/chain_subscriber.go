@@ -389,6 +389,10 @@ func (cs *ChainSubscriber) FilterLogsWithChannel(ctx context.Context, q ethereum
 		// startBlock => 1201
 		// currBlocksPerScan => 200*2 = 400
 		// endBlock => 1200+400 = 1600
+		if startBlock > toBlock {
+			return
+		}
+
 		if reduceBlocksPerScan {
 			reduceBlocksPerScan = false
 			blocksPerScanToDebase := currBlocksPerScan - cs.blocksPerScan
@@ -440,8 +444,10 @@ func (cs *ChainSubscriber) FilterLogsWithChannel(ctx context.Context, q ethereum
 					if lastBlock >= startBlock {
 						toBlock = lastBlock
 					} else {
+						// If startBlock > lastBlock, we should wait for new blocks
+						// But to prevent infinite loop, we should break if we're not making progress
 						log.Debug("Subscriber FilterLogs waits for new block generated", "client", fmt.Sprintf("%p", cs.c),
-							"queryHash", query.Hash(), "lastBlock", lastBlock,
+							"queryHash", query.Hash(), "lastBlock", lastBlock, "startBlock", startBlock,
 							"confirmations", cs.blockConfirmationsOnSubscription)
 						time.Sleep(cs.retryInterval)
 						continue Scan
@@ -474,6 +480,9 @@ func (cs *ChainSubscriber) FilterLogsWithChannel(ctx context.Context, q ethereum
 
 				if cs.storage.IsFilterLogsSupported(filterQuery) {
 					lgs, err = cs.storage.FilterLogs(ctx, filterQuery)
+					if err != nil {
+						reduceBlocksPerScan = true
+					}
 				} else {
 					// We need to call rpc nodes so that splitting query as needed.
 					lgs, err = cs.filterLogsWithAutoSplit(ctx, filterQuery)
