@@ -3,3 +3,11 @@ cache
 data/*
 .DS_Store
 .vscode
+
+# Sensitive files
+.env
+.env.*
+config.yaml
+*.key
+*.pem
+*.secret
