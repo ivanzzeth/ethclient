@@ -39,6 +39,12 @@ type JsonRpcError struct {
 	DecodedData interface{} `json:"decoded_data,omitempty"`
 	RawError    string      `json:"raw_error"`
 	Abi         abi.ABI     `json:"-"`
+
+	// RevertReason stores the raw revert reason string extracted from Error(string) format
+	// This is useful when the revert reason contains binary data (e.g., address bytes)
+	RevertReason string `json:"revert_reason,omitempty"`
+	// IsRevertError indicates whether this error is a revert error (Error(string) format)
+	IsRevertError bool `json:"is_revert_error,omitempty"`
 }
 
 func (e *JsonRpcError) Error() string {
@@ -70,9 +76,14 @@ func (e *JsonRpcError) Error() string {
 							Params:        params,
 						}
 					} else {
-						// try to decode using abi.Encoder
+						// try to decode using abi.UnpackRevert
 						revertReason, err := abi.UnpackRevert(hexData)
 						if err == nil {
+							// Store the raw revert reason for use by callers
+							// For calculateCreateProxyWithNonceAddress, revertReason is the address bytes (20 bytes)
+							// as a string (not hex string, but raw bytes as string)
+							e.RevertReason = revertReason
+							e.IsRevertError = true
 							errData = fmt.Sprintf(`reverted with [%s]`, revertReason)
 						}
 					}
@@ -93,6 +104,12 @@ func (err *JsonRpcError) ErrorCode() JsonRpcErrorCode {
 
 func (err *JsonRpcError) ErrorData() interface{} {
 	return err.Data
+}
+
+// GetRevertReason returns the raw revert reason string extracted from Error(string) format.
+// This can be used to extract binary data (e.g., address bytes) from revert errors.
+func (err *JsonRpcError) GetRevertReason() string {
+	return err.RevertReason
 }
 
 // Decode json rpc errors and provide additional information using abi.
@@ -118,6 +135,9 @@ func DecodeJsonRpcError(err error, evmABI abi.ABI) error {
 	if ok {
 		jsonErr.Data = de.ErrorData()
 	}
+
+	// Force decode the error to set the RevertReason and IsRevertError fields
+	_ = jsonErr.Error()
 
 	return jsonErr
 }
