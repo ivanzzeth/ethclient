@@ -106,6 +106,7 @@ func testSubscribeFilterLogs(t *testing.T, sim *simulated.Backend, confirmations
 	client.SetBlockConfirmationsOnSubscription(confirmations)
 	if cs, ok := client.Subscriber.(*subscriber.ChainSubscriber); ok {
 		defer cs.Close()
+		cs.SetRetryInterval(400 * time.Millisecond)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
@@ -190,7 +191,7 @@ func testSubscribeFilterLogs(t *testing.T, sim *simulated.Backend, confirmations
 		sim.Commit()
 	}
 
-	time.Sleep(5 * time.Second)
+	time.Sleep(2 * time.Second)
 
 	t.Log("FilterLogs...")
 

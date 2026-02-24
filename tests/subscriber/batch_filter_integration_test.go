@@ -22,6 +22,9 @@ import (
 // All tests in this file use the simulated backend (helper.SetUpClient returns *simulated.Backend).
 var _ *simulated.Backend = nil
 
+// testRetryInterval shortens realtime scanner polling in tests so we need less sleep.
+const testRetryInterval = 400 * time.Millisecond
+
 // TestBatchLogFilterer_NewPanicsOnNilRPC verifies panic when rpc is nil (integration: we have real client).
 func TestBatchLogFilterer_NewPanicsOnNilRPC(t *testing.T) {
 	sim := helper.SetUpClient(t)
@@ -196,6 +199,7 @@ func TestRealtimeSubscriptions_UseMergedScanner(t *testing.T) {
 	cs, err := subscriber.NewChainSubscriber(sim.Client().RpcClient(), storage)
 	require.NoError(t, err)
 	defer cs.Close()
+	cs.SetRetryInterval(testRetryInterval)
 	sim.Client().SetSubscriber(cs)
 
 	addr := contractAddr
@@ -212,10 +216,10 @@ func TestRealtimeSubscriptions_UseMergedScanner(t *testing.T) {
 	_, err = contract.TestFunc1(opts, "a", big.NewInt(1), []byte("b"))
 	require.NoError(t, err)
 	sim.Commit()
-	time.Sleep(1 * time.Second)
+	time.Sleep(2 * testRetryInterval)
 
 	var count1, count2 int
-	deadline := time.After(3 * time.Second)
+	deadline := time.After(2 * time.Second)
 	for {
 		select {
 		case <-ch1:
@@ -287,6 +291,7 @@ func TestRealtimeSubscriptions_MultiContract(t *testing.T) {
 	cs, err := subscriber.NewChainSubscriber(sim.Client().RpcClient(), storage)
 	require.NoError(t, err)
 	defer cs.Close()
+	cs.SetRetryInterval(testRetryInterval)
 	sim.Client().SetSubscriber(cs)
 
 	ch1 := make(chan types.Log, 16)
@@ -306,11 +311,10 @@ func TestRealtimeSubscriptions_MultiContract(t *testing.T) {
 	_, err = c2.TestFunc1(opts2, "from-c2", big.NewInt(2), []byte("c2"))
 	require.NoError(t, err)
 	sim.Commit()
-	// Give merged scanner time to poll and dispatch (RetryInterval is 3s).
-	time.Sleep(3 * time.Second)
+	time.Sleep(2 * testRetryInterval)
 
 	var logs1, logs2 []types.Log
-	deadline := time.After(5 * time.Second)
+	deadline := time.After(2 * time.Second)
 	for {
 		select {
 		case l := <-ch1:
@@ -367,6 +371,7 @@ func TestRealtime_SameQueryMultipleSubscribers(t *testing.T) {
 	cs, err := subscriber.NewChainSubscriber(sim.Client().RpcClient(), storage)
 	require.NoError(t, err)
 	defer cs.Close()
+	cs.SetRetryInterval(testRetryInterval)
 	sim.Client().SetSubscriber(cs)
 
 	q := ethereum.FilterQuery{Addresses: []common.Address{addr}}
@@ -383,10 +388,10 @@ func TestRealtime_SameQueryMultipleSubscribers(t *testing.T) {
 	_, err = contract.TestFunc1(opts, "shared", big.NewInt(1), []byte("x"))
 	require.NoError(t, err)
 	sim.Commit()
-	time.Sleep(3 * time.Second)
+	time.Sleep(2 * testRetryInterval)
 
 	var logs1, logs2 []types.Log
-	deadline := time.After(5 * time.Second)
+	deadline := time.After(2 * time.Second)
 	for {
 		select {
 		case l := <-ch1:
@@ -424,6 +429,7 @@ func TestRealtime_UnsubscribeStopsDelivery(t *testing.T) {
 	cs, err := subscriber.NewChainSubscriber(sim.Client().RpcClient(), storage)
 	require.NoError(t, err)
 	defer cs.Close()
+	cs.SetRetryInterval(testRetryInterval)
 	sim.Client().SetSubscriber(cs)
 
 	q := ethereum.FilterQuery{Addresses: []common.Address{addr}}
@@ -440,10 +446,10 @@ func TestRealtime_UnsubscribeStopsDelivery(t *testing.T) {
 	_, err = contract.TestFunc1(opts, "after-unsub", big.NewInt(1), []byte("x"))
 	require.NoError(t, err)
 	sim.Commit()
-	time.Sleep(3 * time.Second)
+	time.Sleep(2 * testRetryInterval)
 
 	var count1, count2 int
-	deadline := time.After(5 * time.Second)
+	deadline := time.After(2 * time.Second)
 	for {
 		select {
 		case <-ch1:
