@@ -22,6 +22,7 @@ import (
 )
 
 func Test_SubscribeFilterLogs(t *testing.T) {
+	t.Parallel()
 	handler := log.NewTerminalHandler(os.Stdout, true)
 	logger := log.NewLogger(handler)
 	log.SetDefault(logger)
@@ -106,7 +107,7 @@ func testSubscribeFilterLogs(t *testing.T, sim *simulated.Backend, confirmations
 	client.SetBlockConfirmationsOnSubscription(confirmations)
 	if cs, ok := client.Subscriber.(*subscriber.ChainSubscriber); ok {
 		defer cs.Close()
-		cs.SetRetryInterval(400 * time.Millisecond)
+		cs.SetRetryInterval(250 * time.Millisecond)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)

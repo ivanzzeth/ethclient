@@ -22,6 +22,7 @@ import (
 )
 
 func Test_QueryHandler(t *testing.T) {
+	t.Parallel()
 	handler := log.NewTerminalHandlerWithLevel(os.Stdout, log.LevelInfo, true)
 	logger := log.NewLogger(handler)
 	log.SetDefault(logger)
@@ -46,7 +47,7 @@ func test_QueryHandler(t *testing.T, sim *simulated.Backend) {
 	client := sim.Client()
 	if cs, ok := client.Subscriber.(*subscriber.ChainSubscriber); ok {
 		defer cs.Close()
-		cs.SetRetryInterval(400 * time.Millisecond)
+		cs.SetRetryInterval(250 * time.Millisecond)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
 	defer cancel()
@@ -83,7 +84,7 @@ func test_QueryHandler(t *testing.T, sim *simulated.Backend) {
 	callCount := 3
 	test_BatchCallTestFunc1(t, ctx, sim, contract, callCount)
 
-	time.Sleep(3 * time.Second)
+	time.Sleep(2 * time.Second)
 
 	nonceAfter, _ := client.Client.PendingNonceAt(ctx, helper.Addr1)
 
@@ -100,7 +101,7 @@ func test_QueryHandler(t *testing.T, sim *simulated.Backend) {
 
 	sim.Commit()
 
-	time.Sleep(2 * time.Second)
+	time.Sleep(1500 * time.Millisecond)
 
 	latestBlock, err = handler.LatestBlockForQuery(ctx, query)
 	if err != nil {

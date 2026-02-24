@@ -19,6 +19,7 @@ import (
 )
 
 func Test_SubscribeFilterTransaction(t *testing.T) {
+	t.Parallel()
 	handler := log.NewTerminalHandler(os.Stdout, true)
 	logger := log.NewLogger(handler)
 	log.SetDefault(logger)

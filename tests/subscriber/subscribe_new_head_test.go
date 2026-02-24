@@ -16,6 +16,7 @@ import (
 )
 
 func Test_HeaderSubscriber(t *testing.T) {
+	t.Parallel()
 	handler := log.NewTerminalHandler(os.Stdout, true)
 	logger := log.NewLogger(handler)
 	log.SetDefault(logger)

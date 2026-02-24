@@ -23,10 +23,11 @@ import (
 var _ *simulated.Backend = nil
 
 // testRetryInterval shortens realtime scanner polling in tests so we need less sleep.
-const testRetryInterval = 400 * time.Millisecond
+const testRetryInterval = 250 * time.Millisecond
 
 // TestBatchLogFilterer_NewPanicsOnNilRPC verifies panic when rpc is nil (integration: we have real client).
 func TestBatchLogFilterer_NewPanicsOnNilRPC(t *testing.T) {
+	t.Parallel()
 	sim := helper.SetUpClient(t)
 	defer sim.Close()
 	raw := sim.Client().RawClient()
@@ -41,6 +42,7 @@ func TestBatchLogFilterer_NewPanicsOnNilRPC(t *testing.T) {
 
 // TestFilterLogsBatch_EmptyQueries returns nil, nil for empty slice.
 func TestFilterLogsBatch_EmptyQueries(t *testing.T) {
+	t.Parallel()
 	sim := helper.SetUpClient(t)
 	defer sim.Close()
 	batch := subscriber.NewBatchLogFilterer(sim.Client().RawClient(), sim.Client().RpcClient())
@@ -58,6 +60,7 @@ func TestFilterLogsBatch_EmptyQueries(t *testing.T) {
 
 // TestFilterLogsBatch_InvalidQuery_BlockHashAndFromBlock returns error.
 func TestFilterLogsBatch_InvalidQuery_BlockHashAndFromBlock(t *testing.T) {
+	t.Parallel()
 	sim := helper.SetUpClient(t)
 	defer sim.Close()
 	batch := subscriber.NewBatchLogFilterer(sim.Client().RawClient(), sim.Client().RpcClient())
@@ -78,6 +81,7 @@ func TestFilterLogsBatch_InvalidQuery_BlockHashAndFromBlock(t *testing.T) {
 
 // TestFilterLogsBatch_SingleQuery matches single FilterLogs (happy path).
 func TestFilterLogsBatch_SingleQuery(t *testing.T) {
+	t.Parallel()
 	sim := helper.SetUpClient(t)
 	defer sim.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
@@ -102,6 +106,7 @@ func TestFilterLogsBatch_SingleQuery(t *testing.T) {
 
 // TestFilterLogs_DelegateMatchesRaw ensures batch.FilterLogs returns same result as raw client.
 func TestFilterLogs_DelegateMatchesRaw(t *testing.T) {
+	t.Parallel()
 	sim := helper.SetUpClient(t)
 	defer sim.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
@@ -137,6 +142,7 @@ func TestFilterLogs_DelegateMatchesRaw(t *testing.T) {
 
 // TestFilterLogsBatch_ToBlockNilUsesLatest ensures query with ToBlock=nil does not error (uses "latest").
 func TestFilterLogsBatch_ToBlockNilUsesLatest(t *testing.T) {
+	t.Parallel()
 	sim := helper.SetUpClient(t)
 	defer sim.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
@@ -157,6 +163,7 @@ func TestFilterLogsBatch_ToBlockNilUsesLatest(t *testing.T) {
 
 // TestFilterLogsBatch_TwoQueries merges two eth_getLogs into one batch (main feature).
 func TestFilterLogsBatch_TwoQueries(t *testing.T) {
+	t.Parallel()
 	sim := helper.SetUpClient(t)
 	defer sim.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
@@ -186,6 +193,7 @@ func TestFilterLogsBatch_TwoQueries(t *testing.T) {
 // TestRealtimeSubscriptions_UseMergedScanner verifies two realtime SubscribeFilterLogs receive logs (merged path).
 // Must close subscriber so runRealtimeScanner goroutine exits and test can finish.
 func TestRealtimeSubscriptions_UseMergedScanner(t *testing.T) {
+	t.Parallel()
 	sim := helper.SetUpClient(t)
 	defer sim.Close()
 	sim.Client().SetBlockConfirmationsOnSubscription(0)
@@ -219,7 +227,7 @@ func TestRealtimeSubscriptions_UseMergedScanner(t *testing.T) {
 	time.Sleep(2 * testRetryInterval)
 
 	var count1, count2 int
-	deadline := time.After(2 * time.Second)
+	deadline := time.After(1200 * time.Millisecond)
 	for {
 		select {
 		case <-ch1:
@@ -237,6 +245,7 @@ done:
 
 // TestFilterLogsBatch_MultiContractMultiEvent: two contracts, two event types, batch returns logs per query.
 func TestFilterLogsBatch_MultiContractMultiEvent(t *testing.T) {
+	t.Parallel()
 	sim := helper.SetUpClient(t)
 	defer sim.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
@@ -277,6 +286,7 @@ func TestFilterLogsBatch_MultiContractMultiEvent(t *testing.T) {
 
 // TestRealtimeSubscriptions_MultiContract verifies merged scanner with two different contracts (two subscriptions).
 func TestRealtimeSubscriptions_MultiContract(t *testing.T) {
+	t.Parallel()
 	sim := helper.SetUpClient(t)
 	defer sim.Close()
 	sim.Client().SetBlockConfirmationsOnSubscription(0)
@@ -314,7 +324,7 @@ func TestRealtimeSubscriptions_MultiContract(t *testing.T) {
 	time.Sleep(2 * testRetryInterval)
 
 	var logs1, logs2 []types.Log
-	deadline := time.After(2 * time.Second)
+	deadline := time.After(1200 * time.Millisecond)
 	for {
 		select {
 		case l := <-ch1:
@@ -358,6 +368,7 @@ func assertNoDuplicateLogs(t *testing.T, logs []types.Log) {
 
 // TestRealtime_SameQueryMultipleSubscribers verifies that multiple subscribers to the same query each receive logs.
 func TestRealtime_SameQueryMultipleSubscribers(t *testing.T) {
+	t.Parallel()
 	sim := helper.SetUpClient(t)
 	defer sim.Close()
 	sim.Client().SetBlockConfirmationsOnSubscription(0)
@@ -391,7 +402,7 @@ func TestRealtime_SameQueryMultipleSubscribers(t *testing.T) {
 	time.Sleep(2 * testRetryInterval)
 
 	var logs1, logs2 []types.Log
-	deadline := time.After(2 * time.Second)
+	deadline := time.After(1200 * time.Millisecond)
 	for {
 		select {
 		case l := <-ch1:
@@ -416,6 +427,7 @@ done:
 
 // TestRealtime_UnsubscribeStopsDelivery verifies that after Unsubscribe, that channel gets no more logs; others with same query still do.
 func TestRealtime_UnsubscribeStopsDelivery(t *testing.T) {
+	t.Parallel()
 	sim := helper.SetUpClient(t)
 	defer sim.Close()
 	sim.Client().SetBlockConfirmationsOnSubscription(0)
@@ -449,7 +461,7 @@ func TestRealtime_UnsubscribeStopsDelivery(t *testing.T) {
 	time.Sleep(2 * testRetryInterval)
 
 	var count1, count2 int
-	deadline := time.After(2 * time.Second)
+	deadline := time.After(1200 * time.Millisecond)
 	for {
 		select {
 		case <-ch1:
@@ -469,6 +481,7 @@ done:
 // TestSubmitQuery_RealtimeRegistersWithoutSpawningPerQueryLoop verifies SubmitQuery with ToBlock==nil does not block.
 // Must close subscriber so runRealtimeScanner exits.
 func TestSubmitQuery_RealtimeRegistersWithoutSpawningPerQueryLoop(t *testing.T) {
+	t.Parallel()
 	sim := helper.SetUpClient(t)
 	defer sim.Close()
 
