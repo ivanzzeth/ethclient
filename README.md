@@ -100,6 +100,13 @@ func BatchSendSafeTx(from common.Address, builder gnosissafe.SafeTxBuilder, deli
 
 ```
 
+## Running tests
+
+- **Unit + integration** (simulated backend, no real RPC): `go test ./...` (subscriber tests need `-timeout=120s` or they may hit default timeout)
+- **E2e** (includes tests that talk to real RPC): `go test -tags=e2e ./...`
+
+E2e tests live in `*_e2e_test.go` files behind the `e2e` build tag.
+
 ## Setup local node for testing
 
 you should install foundry before running the script below:

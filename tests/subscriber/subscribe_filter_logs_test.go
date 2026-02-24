@@ -104,6 +104,9 @@ func test_SubscribeFilterLogs_UsingRedisStorage(t *testing.T) {
 func testSubscribeFilterLogs(t *testing.T, sim *simulated.Backend, confirmations uint64) {
 	client := sim.Client()
 	client.SetBlockConfirmationsOnSubscription(confirmations)
+	if cs, ok := client.Subscriber.(*subscriber.ChainSubscriber); ok {
+		defer cs.Close()
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
 	defer cancel()
@@ -187,7 +190,7 @@ func testSubscribeFilterLogs(t *testing.T, sim *simulated.Backend, confirmations
 		sim.Commit()
 	}
 
-	time.Sleep(10 * time.Second)
+	time.Sleep(5 * time.Second)
 
 	t.Log("FilterLogs...")
 

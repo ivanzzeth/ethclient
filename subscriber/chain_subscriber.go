@@ -25,9 +25,16 @@ var _ Subscriber = (*ChainSubscriber)(nil)
 
 var _ ethereum.LogFilterer = (*ChainSubscriber)(nil)
 
+// realtimeEntry holds one realtime subscription for the merged scanner.
+type realtimeEntry struct {
+	query ethereum.FilterQuery
+	ch    chan<- etypes.Log
+}
+
 // ChainSubscriber implements Subscriber interface
 type ChainSubscriber struct {
 	c                                *ethclient.Client
+	logFilterer                       LogFiltererBatch
 	geth                             *gethclient.Client
 	chainId                          *big.Int
 	retryInterval                    time.Duration
@@ -44,6 +51,10 @@ type ChainSubscriber struct {
 	queryHandler       QueryHandler
 	queryMap           sync.Map
 	globalLogsChannels sync.Map
+
+	realtimeMu           sync.Mutex
+	realtimeQueries      map[common.Hash][]*realtimeEntry // same query can have multiple subscribers (channels)
+	realtimeScannerStart sync.Once
 }
 
 // NewChainSubscriber .
@@ -59,6 +70,7 @@ func NewChainSubscriber(rpcCli *rpc.Client, storage SubscriberStorage) (*ChainSu
 
 	subscriber := &ChainSubscriber{
 		c:                 c,
+		logFilterer:       NewBatchLogFilterer(c, rpcCli),
 		geth:              geth,
 		chainId:           chainId,
 		buffer:            consts.DefaultMsgBuffer,
@@ -69,6 +81,7 @@ func NewChainSubscriber(rpcCli *rpc.Client, storage SubscriberStorage) (*ChainSu
 		storage:           storage,
 		queryCtx:          queryCtx,
 		cancelQueryCtx:    cancel,
+		realtimeQueries:   make(map[common.Hash][]*realtimeEntry),
 	}
 
 	return subscriber, nil
@@ -163,6 +176,15 @@ func (cs *ChainSubscriber) SubmitQuery(query ethereum.FilterQuery) error {
 	globalLogsChannel := cs.getQueryLogChannel(queryHash)
 
 	queryOnce.Do(func() {
+		if query.ToBlock == nil {
+			// Realtime: register and use merged scanner (one FilterLogsBatch per cycle for all queries).
+			cs.realtimeMu.Lock()
+			cs.realtimeQueries[queryHash] = append(cs.realtimeQueries[queryHash], &realtimeEntry{query: query, ch: globalLogsChannel})
+			cs.realtimeMu.Unlock()
+			cs.startRealtimeScanner()
+			go cs.handleQueryLogsChannel(query, globalLogsChannel)
+			return
+		}
 		for {
 			err := cs.FilterLogsWithChannel(cs.queryCtx, query, globalLogsChannel, true, true)
 			if err != nil {
@@ -171,10 +193,8 @@ func (cs *ChainSubscriber) SubmitQuery(query ethereum.FilterQuery) error {
 				time.Sleep(cs.retryInterval)
 				continue
 			}
-
 			break
 		}
-
 		go cs.handleQueryLogsChannel(query, globalLogsChannel)
 	})
 
@@ -197,14 +217,223 @@ func (cs *ChainSubscriber) getQueryLogChannel(queryHash common.Hash) chan etypes
 	return globalLogsChannel
 }
 
+func (cs *ChainSubscriber) startRealtimeScanner() {
+	cs.realtimeScannerStart.Do(func() {
+		go cs.runRealtimeScanner()
+	})
+}
+
+// runRealtimeScanner runs one loop per chain: collect all realtime queries, one FilterLogsBatch, then dispatch.
+func (cs *ChainSubscriber) runRealtimeScanner() {
+	ctx := cs.queryCtx
+	var lastBlockAtomic atomic.Uint64
+	go func() {
+		for {
+			lastBlock, err := cs.c.BlockNumber(ctx)
+			if err != nil {
+				log.Warn("realtime scanner BlockNumber failed", "err", err)
+				time.Sleep(cs.retryInterval)
+				continue
+			}
+			lastBlockAtomic.Store(lastBlock)
+			time.Sleep(cs.retryInterval)
+		}
+	}()
+
+	reduceBlocksPerScan := false
+	currBlocks := cs.currBlocksPerScan
+
+	updateScan := func() {
+		if reduceBlocksPerScan {
+			reduceBlocksPerScan = false
+			if currBlocks > cs.blocksPerScan {
+				currBlocks = cs.blocksPerScan
+			}
+		} else {
+			if currBlocks < cs.maxBlocksPerScan {
+				currBlocks *= 2
+				if currBlocks > cs.maxBlocksPerScan {
+					currBlocks = cs.maxBlocksPerScan
+				}
+			}
+		}
+	}
+
+	queryStateReader := cs.storage
+	queryStateWriter := cs.storage
+	if cs.isQueryHandlerSet() {
+		queryStateReader = cs.queryHandler
+		queryStateWriter = cs.queryHandler
+	}
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
+
+		cs.realtimeMu.Lock()
+		// Group by queryHash so same query has one batch request and one storage update, but multiple channels.
+		type queryGroup struct {
+			hash   common.Hash
+			query  ethereum.FilterQuery
+			entries []*realtimeEntry
+		}
+		groups := make([]queryGroup, 0, len(cs.realtimeQueries))
+		for hash, entries := range cs.realtimeQueries {
+			if len(entries) == 0 {
+				continue
+			}
+			groups = append(groups, queryGroup{hash: hash, query: entries[0].query, entries: entries})
+		}
+		cs.realtimeMu.Unlock()
+
+		if len(groups) == 0 {
+			time.Sleep(cs.retryInterval)
+			continue
+		}
+
+		lastBlock := lastBlockAtomic.Load()
+		if lastBlock < cs.blockConfirmationsOnSubscription {
+			time.Sleep(cs.retryInterval)
+			continue
+		}
+		lastBlock -= cs.blockConfirmationsOnSubscription
+
+		minStart := uint64(0)
+		for _, g := range groups {
+			latest, err := queryStateReader.LatestBlockForQuery(ctx, g.query)
+			if err != nil {
+				log.Warn("realtime scanner LatestBlockForQuery failed", "err", err, "queryHash", g.hash)
+				time.Sleep(cs.retryInterval)
+				continue
+			}
+			next := latest + 1
+			if minStart == 0 || next < minStart {
+				minStart = next
+			}
+		}
+		if minStart > lastBlock {
+			time.Sleep(cs.retryInterval)
+			continue
+		}
+
+		endBlock := minStart + currBlocks - 1
+		if endBlock > lastBlock {
+			endBlock = lastBlock
+		}
+		if minStart > endBlock {
+			time.Sleep(cs.retryInterval)
+			continue
+		}
+		startBlock := minStart
+
+		queries := make([]ethereum.FilterQuery, len(groups))
+		for i, g := range groups {
+			queries[i] = ethereum.FilterQuery{
+				FromBlock: big.NewInt(0).SetUint64(startBlock),
+				ToBlock:   big.NewInt(0).SetUint64(endBlock),
+				Addresses: g.query.Addresses,
+				Topics:    g.query.Topics,
+			}
+		}
+
+		allLogs, err := cs.logFilterer.FilterLogsBatch(ctx, queries)
+		if err != nil {
+			log.Warn("realtime scanner FilterLogsBatch failed", "err", err)
+			reduceBlocksPerScan = true
+			time.Sleep(cs.retryInterval)
+			continue
+		}
+
+		for i, g := range groups {
+			q := g.query
+			logs := allLogs[i]
+			latestHandledLog, err := queryStateReader.LatestLogForQuery(ctx, q)
+			if err != nil {
+				log.Warn("realtime scanner LatestLogForQuery failed", "err", err, "queryHash", g.hash)
+				continue
+			}
+			for _, l := range logs {
+				if latestHandledLog.BlockNumber > l.BlockNumber {
+					continue
+				}
+				if latestHandledLog.BlockNumber == l.BlockNumber {
+					if latestHandledLog.TxIndex > l.TxIndex {
+						continue
+					}
+					if latestHandledLog.TxIndex == l.TxIndex && latestHandledLog.Index >= l.Index {
+						continue
+					}
+				}
+				for _, e := range g.entries {
+					select {
+					case e.ch <- l:
+					case <-ctx.Done():
+						return
+					}
+				}
+				if queryStateWriter != nil && !cs.isQueryHandlerSet() {
+					if err := queryStateWriter.SaveLatestLogForQuery(ctx, q, l); err != nil {
+						log.Error("realtime scanner SaveLatestLogForQuery failed", "err", err, "queryHash", g.hash)
+					}
+				}
+			}
+			if queryStateWriter != nil && (!cs.isQueryHandlerSet() || len(logs) == 0) {
+				if cs.isQueryHandlerSet() && len(logs) == 0 {
+					for _, e := range g.entries {
+						select {
+						case e.ch <- etypes.Log{BlockNumber: endBlock}:
+						case <-ctx.Done():
+							return
+						}
+					}
+				} else if err := queryStateWriter.SaveLatestBlockForQuery(ctx, q, endBlock); err != nil {
+					log.Error("realtime scanner SaveLatestBlockForQuery failed", "err", err, "queryHash", g.hash)
+				}
+			}
+		}
+
+		updateScan()
+		time.Sleep(cs.retryInterval)
+	}
+}
+
 func (cs *ChainSubscriber) SubscribeFilterLogs(ctx context.Context, q ethereum.FilterQuery, ch chan<- etypes.Log) (sub ethereum.Subscription, err error) {
 	log.Debug("SubscribeFilterlogs starts", "query", q)
 
 	ctx, cancel := context.WithCancel(ctx)
+	if q.ToBlock == nil {
+		// Realtime: register and use merged scanner (one FilterLogsBatch per cycle).
+		// Same query can have multiple subscribers (different channels).
+		queryHash := GetQueryHash(cs.chainId, q)
+		entry := &realtimeEntry{query: q, ch: ch}
+		cs.realtimeMu.Lock()
+		cs.realtimeQueries[queryHash] = append(cs.realtimeQueries[queryHash], entry)
+		cs.realtimeMu.Unlock()
+		cs.startRealtimeScanner()
+		go func() {
+			<-ctx.Done()
+			cs.realtimeMu.Lock()
+			entries := cs.realtimeQueries[queryHash]
+			for i, e := range entries {
+				if e == entry {
+					cs.realtimeQueries[queryHash] = append(entries[:i], entries[i+1:]...)
+					if len(cs.realtimeQueries[queryHash]) == 0 {
+						delete(cs.realtimeQueries, queryHash)
+					}
+					break
+				}
+			}
+			cs.realtimeMu.Unlock()
+		}()
+		sub = &subscription{ctx, cancel}
+		return sub, nil
+	}
 	err = cs.FilterLogsWithChannel(ctx, q, ch, true, true)
-
 	sub = &subscription{ctx, cancel}
-	return
+	return sub, err
 }
 
 func (cs *ChainSubscriber) FilterLogs(ctx context.Context, q ethereum.FilterQuery) (logs []etypes.Log, err error) {
@@ -227,7 +456,7 @@ func (cs *ChainSubscriber) FilterLogs(ctx context.Context, q ethereum.FilterQuer
 // 3. cache all of finalized historical data, e.g., blockByHash, txByHash
 func (cs *ChainSubscriber) FilterLogsWithChannel(ctx context.Context, q ethereum.FilterQuery, logsChan chan<- etypes.Log, watch bool, closeOnExit bool) (err error) {
 	if q.BlockHash != nil {
-		logs, err := cs.c.FilterLogs(ctx, q)
+		logs, err := cs.logFilterer.FilterLogs(ctx, q)
 		if err != nil {
 			return err
 		}
@@ -402,7 +631,7 @@ func (cs *ChainSubscriber) FilterLogsWithChannel(ctx context.Context, q ethereum
 				if cs.storage.IsFilterLogsSupported(filterQuery) {
 					lgs, err = cs.storage.FilterLogs(ctx, filterQuery)
 				} else {
-					lgs, err = cs.c.FilterLogs(ctx, filterQuery)
+					lgs, err = cs.logFilterer.FilterLogs(ctx, filterQuery)
 
 					/*
 						If a query returns too many results or exceeds the max query duration,

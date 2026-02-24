@@ -31,6 +31,9 @@ func Test_SubscribeFilterTransaction(t *testing.T) {
 
 func testSubscribeFilterTransaction(t *testing.T, sim *simulated.Backend) {
 	client := sim.Client()
+	if cs, ok := client.Subscriber.(*subscriber.ChainSubscriber); ok {
+		defer cs.Close()
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
 	defer cancel()
@@ -131,7 +134,7 @@ func testSubscribeFilterTransaction(t *testing.T, sim *simulated.Backend) {
 	_, ok = client.WaitMsgReceipt(msg.Id(), 0, 3*time.Second)
 	assert.Equal(t, true, ok)
 
-	time.Sleep(4 * time.Second)
+	time.Sleep(2 * time.Second)
 
 	assert.Equal(t, 2, txCount, "subscribe txs failed")
 
