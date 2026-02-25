@@ -350,6 +350,86 @@ done:
 	assertNoDuplicateLogs(t, logs2)
 }
 
+// TestMergedRealtime_NoExtraNoMissing verifies that after merging queries into one eth_getLogs,
+// each subscription receives exactly the logs that match its query (no extra, no missing).
+func TestMergedRealtime_NoExtraNoMissing(t *testing.T) {
+	t.Parallel()
+	sim := helper.SetUpClient(t)
+	defer sim.Close()
+	sim.Client().SetBlockConfirmationsOnSubscription(0)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	addr1, _, c1 := helper.DeployTestContract(t, ctx, sim)
+	addr2, _, c2 := helper.DeployTestContract(t, ctx, sim)
+	chainID, _ := sim.Client().ChainID(ctx)
+	storage := subscriber.NewMemoryStorage(chainID)
+	cs, err := subscriber.NewChainSubscriber(sim.Client().RpcClient(), storage)
+	require.NoError(t, err)
+	defer cs.Close()
+	cs.SetRetryInterval(testRetryInterval)
+	sim.Client().SetSubscriber(cs)
+
+	// Three different queries: only addr1, only addr2, and both (merged scanner serves all with one eth_getLogs).
+	ch1 := make(chan types.Log, 16)
+	ch2 := make(chan types.Log, 16)
+	ch3 := make(chan types.Log, 16)
+	sub1, err := cs.SubscribeFilterLogs(ctx, ethereum.FilterQuery{Addresses: []common.Address{addr1}}, ch1)
+	require.NoError(t, err)
+	defer sub1.Unsubscribe()
+	sub2, err := cs.SubscribeFilterLogs(ctx, ethereum.FilterQuery{Addresses: []common.Address{addr2}}, ch2)
+	require.NoError(t, err)
+	defer sub2.Unsubscribe()
+	sub3, err := cs.SubscribeFilterLogs(ctx, ethereum.FilterQuery{Addresses: []common.Address{addr1, addr2}}, ch3)
+	require.NoError(t, err)
+	defer sub3.Unsubscribe()
+
+	// Emit one event from c1 and one from c2 (use fresh opts per tx so nonce is correct).
+	opts1, _ := sim.Client().MessageToTransactOpts(ctx, message.Request{From: helper.Addr1})
+	_, err = c1.TestFunc1(opts1, "c1", big.NewInt(1), []byte("1"))
+	require.NoError(t, err)
+	sim.Commit()
+	opts2, _ := sim.Client().MessageToTransactOpts(ctx, message.Request{From: helper.Addr1})
+	_, err = c2.TestFunc1(opts2, "c2", big.NewInt(2), []byte("2"))
+	require.NoError(t, err)
+	sim.Commit()
+	time.Sleep(2 * testRetryInterval)
+
+	var logs1, logs2, logs3 []types.Log
+	deadline := time.After(1500 * time.Millisecond)
+	for {
+		select {
+		case l := <-ch1:
+			logs1 = append(logs1, l)
+		case l := <-ch2:
+			logs2 = append(logs2, l)
+		case l := <-ch3:
+			logs3 = append(logs3, l)
+		case <-deadline:
+			goto done
+		}
+	}
+done:
+	// No extra: each channel only logs for its filter.
+	for _, l := range logs1 {
+		assert.Equal(t, addr1, l.Address, "ch1 must only get addr1 logs")
+	}
+	for _, l := range logs2 {
+		assert.Equal(t, addr2, l.Address, "ch2 must only get addr2 logs")
+	}
+	for _, l := range logs3 {
+		assert.True(t, l.Address == addr1 || l.Address == addr2, "ch3 must only get addr1 or addr2")
+	}
+	// No missing: ch1 gets 1 (c1), ch2 gets 1 (c2), ch3 gets 2 (c1 + c2).
+	assert.GreaterOrEqual(t, len(logs1), 1, "ch1 must get at least the c1 event")
+	assert.GreaterOrEqual(t, len(logs2), 1, "ch2 must get at least the c2 event")
+	assert.GreaterOrEqual(t, len(logs3), 2, "ch3 must get both c1 and c2 events")
+	assertNoDuplicateLogs(t, logs1)
+	assertNoDuplicateLogs(t, logs2)
+	assertNoDuplicateLogs(t, logs3)
+}
+
 // assertNoDuplicateLogs fails if the same log (block+txindex+index) appears more than once.
 func assertNoDuplicateLogs(t *testing.T, logs []types.Log) {
 	t.Helper()
