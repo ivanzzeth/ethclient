@@ -104,6 +104,36 @@ func TestMergeFilterQueries_AnyTopicAtIndexMakesMergedNilAtThatIndex(t *testing.
 	assert.Nil(t, merged.Topics[1])
 }
 
+// TestMergeFilterQueries_EmptyTopicUnionBecomesNil: when all queries have Topics[i] non-nil but
+// the union is empty (e.g. all Topics[i]==[]), merged must get topics[i]=nil to avoid filtering
+// out all logs (missed dispatch).
+func TestMergeFilterQueries_EmptyTopicUnionBecomesNil(t *testing.T) {
+	from, to := big.NewInt(1), big.NewInt(10)
+	t0 := common.HexToHash("0x00")
+	emptySlice := []common.Hash{} // non-nil, len 0
+	queries := []ethereum.FilterQuery{
+		{Addresses: []common.Address{{}}, Topics: [][]common.Hash{{t0}, emptySlice}},
+		{Addresses: []common.Address{{}}, Topics: [][]common.Hash{{t0}, emptySlice}},
+	}
+	merged, err := MergeFilterQueries(queries, from, to)
+	require.NoError(t, err)
+	require.Len(t, merged.Topics, 2)
+	assert.NotNil(t, merged.Topics[0])
+	assert.Nil(t, merged.Topics[1], "empty union at index 1 must become nil so eth_getLogs returns logs")
+}
+
+func TestLogMatchesQuery_EmptyTopicSliceMeansAny(t *testing.T) {
+	t0 := common.HexToHash("0x111")
+	t1 := common.HexToHash("0x222")
+	// Query has 4 topic slots; index 2 is empty slice (bind sometimes emits [] instead of nil).
+	q := ethereum.FilterQuery{
+		Addresses: []common.Address{{}},
+		Topics:    [][]common.Hash{{t0}, {t1}, {}, {}},
+	}
+	logWithFourTopics := etypes.Log{Address: common.Address{}, Topics: []common.Hash{t0, t1, common.Hash{0x33}, common.Hash{0x44}}}
+	assert.True(t, LogMatchesQuery(&logWithFourTopics, q), "empty filterTopics must mean any (avoid missed dispatch)")
+}
+
 func TestLogMatchesQuery_AddressFilter(t *testing.T) {
 	addr1 := common.HexToAddress("0xaaa")
 	addr2 := common.HexToAddress("0xbbb")
@@ -227,6 +257,32 @@ func TestMergeFilterQueriesByBlockHash_Union(t *testing.T) {
 	assert.Contains(t, merged.Addresses, a1)
 	assert.Contains(t, merged.Addresses, a2)
 	assert.Equal(t, h, *merged.BlockHash)
+}
+
+func TestMergeFilterQueriesByBlockHash_AnyAddress(t *testing.T) {
+	h := common.Hash{0x02}
+	queries := []ethereum.FilterQuery{
+		{BlockHash: &h, Addresses: nil},
+		{BlockHash: &h, Addresses: []common.Address{}},
+	}
+	merged, err := MergeFilterQueriesByBlockHash(queries, h)
+	require.NoError(t, err)
+	assert.Nil(t, merged.Addresses, "any address in input => merged addresses nil")
+	assert.Equal(t, h, *merged.BlockHash)
+}
+
+func TestMergeFilterQueriesByBlockHash_TopicsWithNil(t *testing.T) {
+	h := common.Hash{0x03}
+	t0 := common.HexToHash("0x111")
+	queries := []ethereum.FilterQuery{
+		{BlockHash: &h, Addresses: []common.Address{{}}, Topics: [][]common.Hash{{t0}, {t0}}},
+		{BlockHash: &h, Addresses: []common.Address{{}}, Topics: [][]common.Hash{{t0}, nil}},
+	}
+	merged, err := MergeFilterQueriesByBlockHash(queries, h)
+	require.NoError(t, err)
+	require.Len(t, merged.Topics, 2)
+	assert.NotNil(t, merged.Topics[0])
+	assert.Nil(t, merged.Topics[1], "nil at index 1 => merged topic nil")
 }
 
 // --- Partition key and partition-by-merge-key tests (TDD: edge cases first) ---

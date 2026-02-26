@@ -120,6 +120,11 @@ func MergeFilterQueries(queries []ethereum.FilterQuery, fromBlock, toBlock *big.
 			topics[i] = nil
 			continue
 		}
+		// Empty union (e.g. all queries had Topics[i]==[]): use nil so we don't filter out logs (avoid missed dispatch).
+		if len(hashSet) == 0 {
+			topics[i] = nil
+			continue
+		}
 		topics[i] = make([]common.Hash, 0, len(hashSet))
 		for h := range hashSet {
 			topics[i] = append(topics[i], h)
@@ -188,6 +193,10 @@ func MergeFilterQueriesByBlockHash(queries []ethereum.FilterQuery, blockHash com
 			topics[i] = nil
 			continue
 		}
+		if len(hashSet) == 0 {
+			topics[i] = nil
+			continue
+		}
 		topics[i] = make([]common.Hash, 0, len(hashSet))
 		for h := range hashSet {
 			topics[i] = append(topics[i], h)
@@ -216,7 +225,7 @@ func LogMatchesQuery(log *etypes.Log, q ethereum.FilterQuery) bool {
 		}
 	}
 	for i, filterTopics := range q.Topics {
-		if filterTopics == nil {
+		if filterTopics == nil || len(filterTopics) == 0 {
 			continue
 		}
 		if i >= len(log.Topics) {

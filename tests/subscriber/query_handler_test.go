@@ -103,11 +103,12 @@ func test_QueryHandler(t *testing.T, sim *simulated.Backend) {
 
 	time.Sleep(1500 * time.Millisecond)
 
+	// When the new block has no logs, the realtime scanner does not advance (no sentinel, no SaveLatestBlockForQuery), so we stay at 4.
 	latestBlock, err = handler.LatestBlockForQuery(ctx, query)
 	if err != nil {
 		t.Fatal(err)
 	}
-	assert.Equal(t, uint64(5), latestBlock)
+	assert.Equal(t, uint64(4), latestBlock)
 }
 
 func test_QueryHandlerWithMockNetworkIssue(t *testing.T) {

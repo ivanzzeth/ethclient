@@ -56,6 +56,7 @@ type ChainSubscriber struct {
 	realtimeMu           sync.Mutex
 	realtimeQueries      map[common.Hash][]*realtimeEntry // same query can have multiple subscribers (channels)
 	realtimeScannerStart sync.Once
+	maxQueriesPerMerge   int // if > 0, split partition into batches of this size to avoid RPC returning 0 (e.g. BSC); 0 = no limit
 }
 
 // NewChainSubscriber .
@@ -111,6 +112,16 @@ func (s *ChainSubscriber) SetMaxBlocksPerScan(maxBlocksPerScan uint64) {
 
 func (s *ChainSubscriber) SetRetryInterval(retryInterval time.Duration) {
 	s.retryInterval = retryInterval
+}
+
+// SetMaxQueriesPerMerge sets the maximum number of queries to merge into one eth_getLogs.
+// When > 0 and a partition has more queries, they are split into batches; each batch is
+// requested separately and results are merged and sorted. Use 2 on BSC to avoid nodes
+// returning 0 for large merged filters. 0 = no limit (default).
+func (cs *ChainSubscriber) SetMaxQueriesPerMerge(n int) {
+	cs.realtimeMu.Lock()
+	defer cs.realtimeMu.Unlock()
+	cs.maxQueriesPerMerge = n
 }
 
 type subscription struct {
@@ -225,6 +236,26 @@ func (cs *ChainSubscriber) startRealtimeScanner() {
 }
 
 // runRealtimeScanner runs one loop per chain: collect all realtime queries, one FilterLogsBatch, then dispatch.
+// realtimeAdvanceProgress returns whether to advance persisted block progress after a merged FilterLogs call.
+// When the node returns 0 logs we must not advance, so the same range is retried and we do not skip events (e.g. Split/Merge).
+func realtimeAdvanceProgress(mergedLogCount int) bool {
+	return mergedLogCount > 0
+}
+
+// nextBlockToScanForRealtime returns the next block number to scan (inclusive) for a realtime query.
+// When storage returns 0 for LatestBlockForQuery, next would be 1; this enforces that we never scan
+// before query.FromBlock (subscription start), avoiding scanning from chain genesis and missing events.
+func nextBlockToScanForRealtime(latest uint64, q ethereum.FilterQuery) uint64 {
+	next := latest + 1
+	if q.FromBlock != nil {
+		from := q.FromBlock.Uint64()
+		if next < from {
+			next = from
+		}
+	}
+	return next
+}
+
 func (cs *ChainSubscriber) runRealtimeScanner() {
 	ctx := cs.queryCtx
 	var lastBlockAtomic atomic.Uint64
@@ -310,7 +341,7 @@ func (cs *ChainSubscriber) runRealtimeScanner() {
 				time.Sleep(cs.retryInterval)
 				continue
 			}
-			next := latest + 1
+			next := nextBlockToScanForRealtime(latest, g.query)
 			if minStart == 0 || next < minStart {
 				minStart = next
 			}
@@ -370,15 +401,138 @@ func (cs *ChainSubscriber) runRealtimeScanner() {
 				time.Sleep(cs.retryInterval)
 				continue
 			}
-			mergedLogs, err := cs.logFilterer.FilterLogs(ctx, merged)
-			if err != nil {
-				log.Warn("realtime scanner FilterLogs failed", "err", err, "partitionKey", partKey)
-				reduceBlocksPerScan = true
-				time.Sleep(cs.retryInterval)
-				continue
+			cs.realtimeMu.Lock()
+			maxMerge := cs.maxQueriesPerMerge
+			cs.realtimeMu.Unlock()
+
+			var mergedLogs []etypes.Log
+			useBatch := !strings.HasPrefix(partKey, "H:") && maxMerge > 0 && len(groupList) > maxMerge
+			if useBatch {
+				var allLogs []etypes.Log
+				var batchErr error
+				for start := 0; start < len(groupList); start += maxMerge {
+					end := start + maxMerge
+					if end > len(groupList) {
+						end = len(groupList)
+					}
+					chunk := groupList[start:end]
+					qChunk := make([]ethereum.FilterQuery, len(chunk))
+					for i, g := range chunk {
+						qChunk[i] = ethereum.FilterQuery{
+							FromBlock: fromBlock, ToBlock: toBlock,
+							Addresses: g.query.Addresses, Topics: g.query.Topics,
+						}
+					}
+					m, mergeErr := MergeFilterQueries(qChunk, fromBlock, toBlock)
+					if mergeErr != nil {
+						log.Warn("realtime scanner batch merge failed", "err", mergeErr, "partitionKey", partKey)
+						batchErr = mergeErr
+						break
+					}
+					logs, err := cs.logFilterer.FilterLogs(ctx, m)
+					if err != nil {
+						log.Warn("realtime scanner FilterLogs failed (batch)", "err", err, "partitionKey", partKey)
+						reduceBlocksPerScan = true
+						batchErr = err
+						break
+					}
+					allLogs = append(allLogs, logs...)
+				}
+				if batchErr != nil {
+					time.Sleep(cs.retryInterval)
+					continue
+				}
+				mergedLogs = allLogs
+				slices.SortFunc(mergedLogs, func(a, b etypes.Log) int {
+					if a.BlockNumber != b.BlockNumber {
+						if a.BlockNumber < b.BlockNumber {
+							return -1
+						}
+						return 1
+					}
+					if a.TxIndex != b.TxIndex {
+						if a.TxIndex < b.TxIndex {
+							return -1
+						}
+						return 1
+					}
+					if a.Index != b.Index {
+						if a.Index < b.Index {
+							return -1
+						}
+						return 1
+					}
+					return 0
+				})
+				log.Debug("realtime scanner FilterLogs (batched)", "partitionKey", partKey, "mergedQueries", len(groupList), "batches", (len(groupList)+maxMerge-1)/maxMerge, "logs", len(mergedLogs))
+			} else {
+				fromStr, toStr := "nil", "nil"
+				if merged.FromBlock != nil {
+					fromStr = merged.FromBlock.String()
+				}
+				if merged.ToBlock != nil {
+					toStr = merged.ToBlock.String()
+				}
+				addrStrs := make([]string, 0, len(merged.Addresses))
+				for _, a := range merged.Addresses {
+					addrStrs = append(addrStrs, a.Hex())
+				}
+				topic0Strs := []string(nil)
+				if len(merged.Topics) > 0 && merged.Topics[0] != nil {
+					topic0Strs = make([]string, 0, len(merged.Topics[0]))
+					for _, h := range merged.Topics[0] {
+						topic0Strs = append(topic0Strs, h.Hex())
+					}
+				}
+				topic1Strs := []string(nil)
+				if len(merged.Topics) > 1 && merged.Topics[1] != nil {
+					topic1Strs = make([]string, 0, len(merged.Topics[1]))
+					for _, h := range merged.Topics[1] {
+						topic1Strs = append(topic1Strs, h.Hex())
+					}
+				}
+				topic2Strs := []string(nil)
+				if len(merged.Topics) > 2 && merged.Topics[2] != nil {
+					topic2Strs = make([]string, 0, len(merged.Topics[2]))
+					for _, h := range merged.Topics[2] {
+						topic2Strs = append(topic2Strs, h.Hex())
+					}
+				}
+				topic3Strs := []string(nil)
+				if len(merged.Topics) > 3 && merged.Topics[3] != nil {
+					topic3Strs = make([]string, 0, len(merged.Topics[3]))
+					for _, h := range merged.Topics[3] {
+						topic3Strs = append(topic3Strs, h.Hex())
+					}
+				}
+				log.Debug("realtime scanner FilterLogs request (merged query)",
+					"partitionKey", partKey,
+					"fromBlock", fromStr, "toBlock", toStr,
+					"addresses", addrStrs,
+					"topics0", topic0Strs, "topics1", topic1Strs, "topics2", topic2Strs, "topics3", topic3Strs,
+					"mergedQueries", len(groupList))
+				var err error
+				mergedLogs, err = cs.logFilterer.FilterLogs(ctx, merged)
+				if err != nil {
+					log.Warn("realtime scanner FilterLogs failed", "err", err, "partitionKey", partKey)
+					reduceBlocksPerScan = true
+					time.Sleep(cs.retryInterval)
+					continue
+				}
+				log.Debug("realtime scanner FilterLogs (merged)", "partitionKey", partKey, "mergedQueries", len(groupList), "logs", len(mergedLogs))
 			}
-			// One eth_getLogs per partition; N queries merged → 1 RPC (optimization).
-			log.Debug("realtime scanner FilterLogs (merged)", "partitionKey", partKey, "mergedQueries", len(groupList), "logs", len(mergedLogs))
+			for j := range mergedLogs {
+				l := &mergedLogs[j]
+				t0 := common.Hash{}
+				if len(l.Topics) > 0 {
+					t0 = l.Topics[0]
+				}
+				log.Info("realtime scanner log received", "partitionKey", partKey, "block", l.BlockNumber, "txHash", l.TxHash.Hex(), "address", l.Address.Hex(), "topic0", t0.Hex())
+			}
+			// When RPC returns 0 logs do not advance progress: avoid permanently skipping blocks (Split/Merge events) on transient empty response or node drop.
+			advanceProgress := realtimeAdvanceProgress(len(mergedLogs))
+			// delivered[i] true if mergedLogs[i] was sent to at least one subscription (for missed-event diagnosis).
+			delivered := make([]bool, len(mergedLogs))
 			for _, g := range groupList {
 				q := g.query
 				latestHandledLog, err := queryStateReader.LatestLogForQuery(ctx, q)
@@ -392,6 +546,7 @@ func (cs *ChainSubscriber) runRealtimeScanner() {
 					if !LogMatchesQuery(l, q) {
 						continue
 					}
+					delivered[i] = true // matched this group (dedup skip still counts as "claimed")
 					if latestHandledLog.BlockNumber > l.BlockNumber {
 						continue
 					}
@@ -417,7 +572,42 @@ func (cs *ChainSubscriber) runRealtimeScanner() {
 						}
 					}
 				}
-				if queryStateWriter != nil && (!cs.isQueryHandlerSet() || len(logsForGroup) == 0) {
+				// Diagnose missed dispatch: only warn when this group's filter (topic0/address) matches a log in the batch but got 0 → LogMatchesQuery bug. Applies to any event type (Split/Merge/Redeem/OrderFilled).
+				if len(mergedLogs) > 0 && len(logsForGroup) == 0 {
+					var queryTopic0 common.Hash
+					if len(q.Topics) > 0 && len(q.Topics[0]) > 0 {
+						queryTopic0 = q.Topics[0][0]
+					}
+					addrMatch := len(q.Addresses) == 0 || (len(q.Addresses) > 0 && slices.Contains(q.Addresses, mergedLogs[0].Address))
+					topic0Match := len(mergedLogs[0].Topics) > 0 && mergedLogs[0].Topics[0] == queryTopic0
+					if addrMatch && topic0Match {
+						l0 := &mergedLogs[0]
+						q1, q2, q3 := common.Hash{}, common.Hash{}, common.Hash{}
+						if len(q.Topics) > 1 && len(q.Topics[1]) > 0 {
+							q1 = q.Topics[1][0]
+						}
+						if len(q.Topics) > 2 && len(q.Topics[2]) > 0 {
+							q2 = q.Topics[2][0]
+						}
+						if len(q.Topics) > 3 && len(q.Topics[3]) > 0 {
+							q3 = q.Topics[3][0]
+						}
+						l1, l2, l3 := common.Hash{}, common.Hash{}, common.Hash{}
+						if len(l0.Topics) > 1 {
+							l1 = l0.Topics[1]
+						}
+						if len(l0.Topics) > 2 {
+							l2 = l0.Topics[2]
+						}
+						if len(l0.Topics) > 3 {
+							l3 = l0.Topics[3]
+						}
+						log.Warn("realtime scanner group got 0 logs but a log in batch matches query (missed dispatch)",
+							"partitionKey", partKey, "queryHash", g.hash, "queryTopic0", queryTopic0.Hex(), "queryTopic1", q1.Hex(), "queryTopic2", q2.Hex(), "queryTopic3", q3.Hex(),
+							"logBlock", l0.BlockNumber, "logTx", l0.TxHash.Hex(), "logTopic1", l1.Hex(), "logTopic2", l2.Hex(), "logTopic3", l3.Hex())
+					}
+				}
+				if advanceProgress && queryStateWriter != nil && (!cs.isQueryHandlerSet() || len(logsForGroup) == 0) {
 					if cs.isQueryHandlerSet() && len(logsForGroup) == 0 {
 						for _, e := range g.entries {
 							select {
@@ -430,6 +620,30 @@ func (cs *ChainSubscriber) runRealtimeScanner() {
 						log.Error("realtime scanner SaveLatestBlockForQuery failed", "err", err, "queryHash", g.hash)
 					}
 				}
+			}
+			// Log any log returned by RPC that matched no subscription (dispatch miss). Applies to all event types (Split/Merge/Redeem/OrderFilled).
+			for i := range mergedLogs {
+				if delivered[i] {
+					continue
+				}
+				l := &mergedLogs[i]
+				topic0 := common.Hash{}
+				if len(l.Topics) > 0 {
+					topic0 = l.Topics[0]
+				}
+				topic1, topic2, topic3 := common.Hash{}, common.Hash{}, common.Hash{}
+				if len(l.Topics) > 1 {
+					topic1 = l.Topics[1]
+				}
+				if len(l.Topics) > 2 {
+					topic2 = l.Topics[2]
+				}
+				if len(l.Topics) > 3 {
+					topic3 = l.Topics[3]
+				}
+				log.Warn("realtime scanner log matched no subscription (missed dispatch)",
+					"partitionKey", partKey, "block", l.BlockNumber, "txHash", l.TxHash.Hex(),
+					"address", l.Address.Hex(), "topic0", topic0.Hex(), "topic1", topic1.Hex(), "topic2", topic2.Hex(), "topic3", topic3.Hex(), "mergedQueries", len(groupList))
 			}
 		}
 

@@ -204,6 +204,15 @@ func (c *Client) SetSubscriber(s subscriber.Subscriber) {
 	c.Subscriber = s
 }
 
+// SetMaxQueriesPerMerge sets the maximum number of realtime queries merged into one eth_getLogs.
+// Use 2 on BSC to avoid nodes returning 0 for large merged filters. 0 = no limit.
+// No-op if the underlying subscriber is not a *ChainSubscriber.
+func (c *Client) SetMaxQueriesPerMerge(n int) {
+	if cs, ok := c.Subscriber.(*subscriber.ChainSubscriber); ok {
+		cs.SetMaxQueriesPerMerge(n)
+	}
+}
+
 func (c *Client) GetSigner() bind.SignerFn {
 	return c.accRegistry.GetSigner()
 }
