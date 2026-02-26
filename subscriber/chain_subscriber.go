@@ -376,73 +376,151 @@ func (cs *ChainSubscriber) runRealtimeScanner() {
 			if len(groupList) == 0 {
 				continue
 			}
-			var merged ethereum.FilterQuery
-			var mergeErr error
-			if strings.HasPrefix(partKey, "H:") {
-				blockHash := common.HexToHash(strings.TrimPrefix(partKey, "H:"))
-				queries := make([]ethereum.FilterQuery, len(groupList))
-				for i, g := range groupList {
-					queries[i] = g.query
-				}
-				merged, mergeErr = MergeFilterQueriesByBlockHash(queries, blockHash)
-			} else {
-				// Range partition (key "R:from:to"); use cycle fromBlock/toBlock.
-				queries := make([]ethereum.FilterQuery, len(groupList))
-				for i, g := range groupList {
-					queries[i] = ethereum.FilterQuery{
-						FromBlock: fromBlock, ToBlock: toBlock,
-						Addresses: g.query.Addresses, Topics: g.query.Topics,
-					}
-				}
-				merged, mergeErr = MergeFilterQueries(queries, fromBlock, toBlock)
+			// Partition by topic layout so we only merge queries with the same topic structure.
+			// E.g. CT events have topic1=stakeholder; OrderFilled has topic2=maker. Merging them
+			// would set both topic1 and topic2 to nil (any nil → merged nil) and fetch full protocol
+			// events instead of funder-only. Same layout → address filter preserved.
+			layoutToGroups := make(map[string][]queryGroup)
+			for _, g := range groupList {
+				layoutKey := TopicLayoutKey(g.query)
+				layoutToGroups[layoutKey] = append(layoutToGroups[layoutKey], g)
 			}
-			if mergeErr != nil {
-				log.Warn("realtime scanner merge failed", "err", mergeErr, "partitionKey", partKey)
-				time.Sleep(cs.retryInterval)
-				continue
-			}
-			cs.realtimeMu.Lock()
-			maxMerge := cs.maxQueriesPerMerge
-			cs.realtimeMu.Unlock()
 
 			var mergedLogs []etypes.Log
-			useBatch := !strings.HasPrefix(partKey, "H:") && maxMerge > 0 && len(groupList) > maxMerge
-			if useBatch {
-				var allLogs []etypes.Log
-				var batchErr error
-				for start := 0; start < len(groupList); start += maxMerge {
-					end := start + maxMerge
-					if end > len(groupList) {
-						end = len(groupList)
+			partitionFailed := false
+			for layoutKey, subgroup := range layoutToGroups {
+				var merged ethereum.FilterQuery
+				var mergeErr error
+				if strings.HasPrefix(partKey, "H:") {
+					blockHash := common.HexToHash(strings.TrimPrefix(partKey, "H:"))
+					queries := make([]ethereum.FilterQuery, len(subgroup))
+					for i, g := range subgroup {
+						queries[i] = g.query
 					}
-					chunk := groupList[start:end]
-					qChunk := make([]ethereum.FilterQuery, len(chunk))
-					for i, g := range chunk {
-						qChunk[i] = ethereum.FilterQuery{
+					merged, mergeErr = MergeFilterQueriesByBlockHash(queries, blockHash)
+				} else {
+					queries := make([]ethereum.FilterQuery, len(subgroup))
+					for i, g := range subgroup {
+						queries[i] = ethereum.FilterQuery{
 							FromBlock: fromBlock, ToBlock: toBlock,
 							Addresses: g.query.Addresses, Topics: g.query.Topics,
 						}
 					}
-					m, mergeErr := MergeFilterQueries(qChunk, fromBlock, toBlock)
+					merged, mergeErr = MergeFilterQueries(queries, fromBlock, toBlock)
+				}
+				if mergeErr != nil {
+					log.Warn("realtime scanner merge failed", "err", mergeErr, "partitionKey", partKey, "layoutKey", layoutKey)
+					partitionFailed = true
+					time.Sleep(cs.retryInterval)
+					continue
+				}
+				cs.realtimeMu.Lock()
+				maxMerge := cs.maxQueriesPerMerge
+				cs.realtimeMu.Unlock()
+
+				var logs []etypes.Log
+				useBatch := !strings.HasPrefix(partKey, "H:") && maxMerge > 0 && len(subgroup) > maxMerge
+				if useBatch {
+					var batchErr error
+					for start := 0; start < len(subgroup); start += maxMerge {
+						end := start + maxMerge
+						if end > len(subgroup) {
+							end = len(subgroup)
+						}
+						chunk := subgroup[start:end]
+						qChunk := make([]ethereum.FilterQuery, len(chunk))
+						for i, g := range chunk {
+							qChunk[i] = ethereum.FilterQuery{
+								FromBlock: fromBlock, ToBlock: toBlock,
+								Addresses: g.query.Addresses, Topics: g.query.Topics,
+							}
+						}
+						m, mergeErr := MergeFilterQueries(qChunk, fromBlock, toBlock)
 					if mergeErr != nil {
-						log.Warn("realtime scanner batch merge failed", "err", mergeErr, "partitionKey", partKey)
+						log.Warn("realtime scanner batch merge failed", "err", mergeErr, "partitionKey", partKey, "layoutKey", layoutKey)
+						partitionFailed = true
 						batchErr = mergeErr
 						break
 					}
-					logs, err := cs.logFilterer.FilterLogs(ctx, m)
+					chunkLogs, err := cs.logFilterer.FilterLogs(ctx, m)
 					if err != nil {
-						log.Warn("realtime scanner FilterLogs failed (batch)", "err", err, "partitionKey", partKey)
+						log.Warn("realtime scanner FilterLogs failed (batch)", "err", err, "partitionKey", partKey, "layoutKey", layoutKey)
 						reduceBlocksPerScan = true
+						partitionFailed = true
 						batchErr = err
 						break
 					}
-					allLogs = append(allLogs, logs...)
+					logs = append(logs, chunkLogs...)
 				}
 				if batchErr != nil {
 					time.Sleep(cs.retryInterval)
 					continue
 				}
-				mergedLogs = allLogs
+					log.Debug("realtime scanner FilterLogs (batched)", "partitionKey", partKey, "layoutKey", layoutKey, "mergedQueries", len(subgroup), "batches", (len(subgroup)+maxMerge-1)/maxMerge, "logs", len(logs))
+				} else {
+					fromStr, toStr := "nil", "nil"
+					if merged.FromBlock != nil {
+						fromStr = merged.FromBlock.String()
+					}
+					if merged.ToBlock != nil {
+						toStr = merged.ToBlock.String()
+					}
+					addrStrs := make([]string, 0, len(merged.Addresses))
+					for _, a := range merged.Addresses {
+						addrStrs = append(addrStrs, a.Hex())
+					}
+					topic0Strs := []string(nil)
+					if len(merged.Topics) > 0 && merged.Topics[0] != nil {
+						topic0Strs = make([]string, 0, len(merged.Topics[0]))
+						for _, h := range merged.Topics[0] {
+							topic0Strs = append(topic0Strs, h.Hex())
+						}
+					}
+					topic1Strs := []string(nil)
+					if len(merged.Topics) > 1 && merged.Topics[1] != nil {
+						topic1Strs = make([]string, 0, len(merged.Topics[1]))
+						for _, h := range merged.Topics[1] {
+							topic1Strs = append(topic1Strs, h.Hex())
+						}
+					}
+					topic2Strs := []string(nil)
+					if len(merged.Topics) > 2 && merged.Topics[2] != nil {
+						topic2Strs = make([]string, 0, len(merged.Topics[2]))
+						for _, h := range merged.Topics[2] {
+							topic2Strs = append(topic2Strs, h.Hex())
+						}
+					}
+					topic3Strs := []string(nil)
+					if len(merged.Topics) > 3 && merged.Topics[3] != nil {
+						topic3Strs = make([]string, 0, len(merged.Topics[3]))
+						for _, h := range merged.Topics[3] {
+							topic3Strs = append(topic3Strs, h.Hex())
+						}
+					}
+					log.Debug("realtime scanner FilterLogs request (merged query)",
+						"partitionKey", partKey, "layoutKey", layoutKey,
+						"fromBlock", fromStr, "toBlock", toStr,
+						"addresses", addrStrs,
+						"topics0", topic0Strs, "topics1", topic1Strs, "topics2", topic2Strs, "topics3", topic3Strs,
+						"mergedQueries", len(subgroup))
+					var err error
+					logs, err = cs.logFilterer.FilterLogs(ctx, merged)
+					if err != nil {
+						log.Warn("realtime scanner FilterLogs failed", "err", err, "partitionKey", partKey, "layoutKey", layoutKey)
+						reduceBlocksPerScan = true
+						partitionFailed = true
+						time.Sleep(cs.retryInterval)
+						continue
+					}
+					log.Debug("realtime scanner FilterLogs (merged)", "partitionKey", partKey, "layoutKey", layoutKey, "mergedQueries", len(subgroup), "logs", len(logs))
+				}
+				mergedLogs = append(mergedLogs, logs...)
+			}
+			if partitionFailed {
+				time.Sleep(cs.retryInterval)
+				continue
+			}
+			if len(mergedLogs) > 0 {
 				slices.SortFunc(mergedLogs, func(a, b etypes.Log) int {
 					if a.BlockNumber != b.BlockNumber {
 						if a.BlockNumber < b.BlockNumber {
@@ -464,62 +542,6 @@ func (cs *ChainSubscriber) runRealtimeScanner() {
 					}
 					return 0
 				})
-				log.Debug("realtime scanner FilterLogs (batched)", "partitionKey", partKey, "mergedQueries", len(groupList), "batches", (len(groupList)+maxMerge-1)/maxMerge, "logs", len(mergedLogs))
-			} else {
-				fromStr, toStr := "nil", "nil"
-				if merged.FromBlock != nil {
-					fromStr = merged.FromBlock.String()
-				}
-				if merged.ToBlock != nil {
-					toStr = merged.ToBlock.String()
-				}
-				addrStrs := make([]string, 0, len(merged.Addresses))
-				for _, a := range merged.Addresses {
-					addrStrs = append(addrStrs, a.Hex())
-				}
-				topic0Strs := []string(nil)
-				if len(merged.Topics) > 0 && merged.Topics[0] != nil {
-					topic0Strs = make([]string, 0, len(merged.Topics[0]))
-					for _, h := range merged.Topics[0] {
-						topic0Strs = append(topic0Strs, h.Hex())
-					}
-				}
-				topic1Strs := []string(nil)
-				if len(merged.Topics) > 1 && merged.Topics[1] != nil {
-					topic1Strs = make([]string, 0, len(merged.Topics[1]))
-					for _, h := range merged.Topics[1] {
-						topic1Strs = append(topic1Strs, h.Hex())
-					}
-				}
-				topic2Strs := []string(nil)
-				if len(merged.Topics) > 2 && merged.Topics[2] != nil {
-					topic2Strs = make([]string, 0, len(merged.Topics[2]))
-					for _, h := range merged.Topics[2] {
-						topic2Strs = append(topic2Strs, h.Hex())
-					}
-				}
-				topic3Strs := []string(nil)
-				if len(merged.Topics) > 3 && merged.Topics[3] != nil {
-					topic3Strs = make([]string, 0, len(merged.Topics[3]))
-					for _, h := range merged.Topics[3] {
-						topic3Strs = append(topic3Strs, h.Hex())
-					}
-				}
-				log.Debug("realtime scanner FilterLogs request (merged query)",
-					"partitionKey", partKey,
-					"fromBlock", fromStr, "toBlock", toStr,
-					"addresses", addrStrs,
-					"topics0", topic0Strs, "topics1", topic1Strs, "topics2", topic2Strs, "topics3", topic3Strs,
-					"mergedQueries", len(groupList))
-				var err error
-				mergedLogs, err = cs.logFilterer.FilterLogs(ctx, merged)
-				if err != nil {
-					log.Warn("realtime scanner FilterLogs failed", "err", err, "partitionKey", partKey)
-					reduceBlocksPerScan = true
-					time.Sleep(cs.retryInterval)
-					continue
-				}
-				log.Debug("realtime scanner FilterLogs (merged)", "partitionKey", partKey, "mergedQueries", len(groupList), "logs", len(mergedLogs))
 			}
 			for j := range mergedLogs {
 				l := &mergedLogs[j]

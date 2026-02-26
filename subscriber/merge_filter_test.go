@@ -11,6 +11,128 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestTopicLayoutKey(t *testing.T) {
+	// No topics → all zeros
+	q := ethereum.FilterQuery{Addresses: []common.Address{{}}}
+	assert.Equal(t, "0000", TopicLayoutKey(q))
+
+	// topic0 set only (e.g. event sig)
+	q.Topics = [][]common.Hash{{common.Hash{0x01}}}
+	assert.Equal(t, "1000", TopicLayoutKey(q))
+
+	// topic0 + topic1 set (e.g. CT PositionSplit: sig + stakeholder)
+	q.Topics = [][]common.Hash{{common.Hash{0x01}}, {common.Hash{0x02}}}
+	assert.Equal(t, "1100", TopicLayoutKey(q))
+
+	// topic0 nil, topic1 set (e.g. OrderFilled: sig + orderHash nil + maker at topic2)
+	q.Topics = [][]common.Hash{{common.Hash{0x01}}, nil, {common.Hash{0x03}}}
+	assert.Equal(t, "1010", TopicLayoutKey(q))
+
+	// Different layouts must get different keys so they are not merged (would lose address filter)
+	ctLike := ethereum.FilterQuery{Topics: [][]common.Hash{{common.Hash{1}}, {common.Hash{2}}}} // topic1=stakeholder
+	ofLike := ethereum.FilterQuery{Topics: [][]common.Hash{{common.Hash{1}}, nil, {common.Hash{2}}}} // topic2=maker
+	assert.NotEqual(t, TopicLayoutKey(ctLike), TopicLayoutKey(ofLike), "CT (topic1=addr) and OrderFilled (topic2=addr) must not merge")
+}
+
+// TestPartitionByTopicLayout_PredictAndPolymarket verifies that after partitioning by TopicLayoutKey,
+// Predict ends up with 2 merged groups (CT/Adapter topic1=stakeholder vs Exchange topic2=maker) and
+// Polymarket with 2 merged groups, and that merging within each group preserves the address filter.
+func TestPartitionByTopicLayout_PredictAndPolymarket(t *testing.T) {
+	from, to := big.NewInt(1), big.NewInt(100)
+	funder := common.HexToHash("0x00000000000000000000000088ed75e9ece373997221e3c0229e74007c1ad718")
+
+	// Build CT/Adapter-like queries: topic0=eventSig, topic1=stakeholder (funder) → layout "1100"
+	makeCTLike := func(addr common.Address, topic0 common.Hash) ethereum.FilterQuery {
+		return ethereum.FilterQuery{
+			Addresses: []common.Address{addr},
+			Topics:    [][]common.Hash{{topic0}, {funder}},
+		}
+	}
+	// Build OrderFilled-like: topic0=sig, topic1=nil (orderHash), topic2=maker → layout "1010"
+	makeOrderFilledLike := func(addr common.Address, topic0 common.Hash) ethereum.FilterQuery {
+		return ethereum.FilterQuery{
+			Addresses: []common.Address{addr},
+			Topics:    [][]common.Hash{{topic0}, nil, {funder}},
+		}
+	}
+
+	// Predict: 2 CT contracts × 3 events = 6, NegRiskAdapter 3, YBNegRiskAdapter 3, Exchange 4 = 16 total
+	addrCT := common.HexToAddress("0x4d97dcd97ec945f40cf65f87097ace5ea0476045")
+	addrAdapter1 := common.HexToAddress("0x0000000000000000000000000000000000000001")
+	addrAdapter2 := common.HexToAddress("0x0000000000000000000000000000000000000002")
+	addrExchange := common.HexToAddress("0x0000000000000000000000000000000000000003")
+	var predictQueries []ethereum.FilterQuery
+	sigs := []common.Hash{{0x01}, {0x02}, {0x03}, {0x04}, {0x05}, {0x06}, {0x07}, {0x08}, {0x09}, {0x0a}, {0x0b}, {0x0c}}
+	for i := 0; i < 12; i++ {
+		addr := addrCT
+		if i >= 6 {
+			addr = addrAdapter1
+		}
+		if i >= 9 {
+			addr = addrAdapter2
+		}
+		predictQueries = append(predictQueries, makeCTLike(addr, sigs[i]))
+	}
+	orderFilledSig := common.Hash{0xd0}
+	for i := 0; i < 4; i++ {
+		predictQueries = append(predictQueries, makeOrderFilledLike(addrExchange, orderFilledSig))
+	}
+	require.Len(t, predictQueries, 16, "Predict has 16 subscriptions")
+
+	// Partition by layout (same as chain_subscriber)
+	layoutToQueries := make(map[string][]ethereum.FilterQuery)
+	for _, q := range predictQueries {
+		key := TopicLayoutKey(q)
+		layoutToQueries[key] = append(layoutToQueries[key], q)
+	}
+	assert.Len(t, layoutToQueries, 2, "Predict must split into 2 layout groups (CT/Adapter vs OrderFilled)")
+	ctLayoutKey := TopicLayoutKey(predictQueries[0])
+	ofLayoutKey := TopicLayoutKey(predictQueries[12])
+	assert.Equal(t, "1100", ctLayoutKey)
+	assert.Equal(t, "1010", ofLayoutKey)
+	require.Len(t, layoutToQueries[ctLayoutKey], 12, "CT/Adapter group has 12 queries")
+	require.Len(t, layoutToQueries[ofLayoutKey], 4, "OrderFilled group has 4 queries")
+
+	// Merge each group and assert address filter preserved
+	mergedCT, err := MergeFilterQueries(layoutToQueries[ctLayoutKey], from, to)
+	require.NoError(t, err)
+	require.Len(t, mergedCT.Topics, 2)
+	assert.NotNil(t, mergedCT.Topics[1], "CT merged must keep topic1=stakeholder filter")
+	assert.Len(t, mergedCT.Topics[1], 1)
+	assert.Equal(t, funder, mergedCT.Topics[1][0])
+
+	mergedOF, err := MergeFilterQueries(layoutToQueries[ofLayoutKey], from, to)
+	require.NoError(t, err)
+	require.Len(t, mergedOF.Topics, 3)
+	assert.NotNil(t, mergedOF.Topics[2], "OrderFilled merged must keep topic2=maker filter")
+	assert.Len(t, mergedOF.Topics[2], 1)
+	assert.Equal(t, funder, mergedOF.Topics[2][0])
+
+	// Polymarket: 1 CT × 3 events + 1 Exchange × OrderFilled = 4 total
+	var polyQueries []ethereum.FilterQuery
+	for i := 0; i < 3; i++ {
+		polyQueries = append(polyQueries, makeCTLike(addrCT, sigs[i]))
+	}
+	polyQueries = append(polyQueries, makeOrderFilledLike(addrExchange, orderFilledSig))
+	require.Len(t, polyQueries, 4, "Polymarket has 4 subscriptions")
+
+	layoutToQueriesPoly := make(map[string][]ethereum.FilterQuery)
+	for _, q := range polyQueries {
+		key := TopicLayoutKey(q)
+		layoutToQueriesPoly[key] = append(layoutToQueriesPoly[key], q)
+	}
+	assert.Len(t, layoutToQueriesPoly, 2, "Polymarket must split into 2 layout groups")
+	require.Len(t, layoutToQueriesPoly[ctLayoutKey], 3, "Polymarket CT group has 3 queries")
+	require.Len(t, layoutToQueriesPoly[ofLayoutKey], 1, "Polymarket OrderFilled group has 1 query")
+
+	mergedPolyCT, err := MergeFilterQueries(layoutToQueriesPoly[ctLayoutKey], from, to)
+	require.NoError(t, err)
+	assert.NotNil(t, mergedPolyCT.Topics[1], "Polymarket CT merged keeps topic1")
+	mergedPolyOF, err := MergeFilterQueries(layoutToQueriesPoly[ofLayoutKey], from, to)
+	require.NoError(t, err)
+	assert.NotNil(t, mergedPolyOF.Topics[2], "Polymarket OrderFilled merged keeps topic2")
+}
+
 func TestMergeFilterQueries_Empty(t *testing.T) {
 	from, to := big.NewInt(1), big.NewInt(10)
 	merged, err := MergeFilterQueries(nil, from, to)

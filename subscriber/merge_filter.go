@@ -38,6 +38,28 @@ func blockNumString(n *big.Int) string {
 	return n.String()
 }
 
+// TopicLayoutKey returns a canonical key for the topic filter layout of q (which topic indices are set vs nil).
+// Queries with the same layout can be merged without losing address filters: e.g. CT events use topic1=stakeholder,
+// OrderFilled uses topic2=maker; merging them would set both topic1 and topic2 to nil (any query has nil → merged nil)
+// and fetch full protocol events. Only merge queries that share the same layout so address filters are preserved.
+// Uses up to 4 topic slots (standard for indexed params).
+func TopicLayoutKey(q ethereum.FilterQuery) string {
+	const maxSlots = 4
+	var b [maxSlots]byte
+	n := maxSlots
+	if len(q.Topics) < n {
+		n = len(q.Topics)
+	}
+	for i := 0; i < maxSlots; i++ {
+		if i < len(q.Topics) && q.Topics[i] != nil && len(q.Topics[i]) > 0 {
+			b[i] = '1'
+		} else {
+			b[i] = '0'
+		}
+	}
+	return string(b[:])
+}
+
 // PartitionQueriesByMergeKey splits queries into groups that share the same partition key (same block range
 // or same BlockHash). Each group can be merged into one eth_getLogs. fallbackFrom/fallbackTo are used for
 // queries with nil FromBlock/ToBlock when provided.
