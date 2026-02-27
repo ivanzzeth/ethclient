@@ -3,6 +3,7 @@ package subscriber
 import (
 	"context"
 	"math/big"
+	"time"
 
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
@@ -21,6 +22,7 @@ type Subscriber interface {
 	SetBlockConfirmationsOnSubscription(confirmations uint64)
 	SetQueryHandler(handler QueryHandler) // use QueryHandler instead of SubscriberStorage if handler set
 	SetFetchMissingHeaders(enable bool)
+	SetRetryInterval(retryInterval time.Duration)
 
 	// Provided for handler submitting query.
 	SubmitQuery(query ethereum.FilterQuery) error
