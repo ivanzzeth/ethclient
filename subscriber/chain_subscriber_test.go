@@ -76,9 +76,37 @@ func TestNextBlockToScanForRealtime(t *testing.T) {
 }
 
 // TestRealtimeAdvanceProgress ensures we only advance progress when the merged FilterLogs
-// response has at least one log (avoids permanently skipping blocks when node returns 0 logs).
-func TestRealtimeAdvanceProgress_ZeroLogsDoesNotAdvance(t *testing.T) {
-	assert.False(t, realtimeAdvanceProgress(0), "0 logs must not advance progress")
-	assert.True(t, realtimeAdvanceProgress(1), "1 log must advance progress")
-	assert.True(t, realtimeAdvanceProgress(10), "10 logs must advance progress")
+// response has at least one log, OR when consecutive zero-log scans exceed the threshold.
+func TestRealtimeAdvanceProgress(t *testing.T) {
+	threshold := DefaultConsecutiveZeroLogThreshold
+
+	t.Run("has_logs_always_advances", func(t *testing.T) {
+		counter := 0
+		assert.True(t, realtimeAdvanceProgress(1, &counter, threshold))
+		assert.Equal(t, 0, counter, "counter should reset on logs found")
+		assert.True(t, realtimeAdvanceProgress(10, &counter, threshold))
+		assert.Equal(t, 0, counter)
+	})
+
+	t.Run("zero_logs_increments_counter", func(t *testing.T) {
+		counter := 0
+		for i := 1; i < threshold; i++ {
+			assert.False(t, realtimeAdvanceProgress(0, &counter, threshold),
+				"should not advance before threshold (iteration %d)", i)
+			assert.Equal(t, i, counter)
+		}
+	})
+
+	t.Run("zero_logs_advances_at_threshold", func(t *testing.T) {
+		counter := threshold - 1
+		assert.True(t, realtimeAdvanceProgress(0, &counter, threshold),
+			"should advance when counter reaches threshold")
+		assert.Equal(t, 0, counter, "counter should reset after advancing")
+	})
+
+	t.Run("logs_after_zero_resets_counter", func(t *testing.T) {
+		counter := threshold - 1
+		assert.True(t, realtimeAdvanceProgress(5, &counter, threshold))
+		assert.Equal(t, 0, counter, "counter should reset when logs found")
+	})
 }

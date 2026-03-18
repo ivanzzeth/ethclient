@@ -53,10 +53,11 @@ type ChainSubscriber struct {
 	queryMap           sync.Map
 	globalLogsChannels sync.Map
 
-	realtimeMu           sync.Mutex
-	realtimeQueries      map[common.Hash][]*realtimeEntry // same query can have multiple subscribers (channels)
-	realtimeScannerStart sync.Once
-	maxQueriesPerMerge   int // if > 0, split partition into batches of this size to avoid RPC returning 0 (e.g. BSC); 0 = no limit
+	realtimeMu                    sync.Mutex
+	realtimeQueries               map[common.Hash][]*realtimeEntry // same query can have multiple subscribers (channels)
+	realtimeScannerStart          sync.Once
+	maxQueriesPerMerge            int // if > 0, split partition into batches of this size to avoid RPC returning 0 (e.g. BSC); 0 = no limit
+	consecutiveZeroLogThreshold   int // number of consecutive 0-log scans before forcing FromBlock advance (default: 3)
 }
 
 // NewChainSubscriber .
@@ -83,7 +84,8 @@ func NewChainSubscriber(rpcCli *rpc.Client, storage SubscriberStorage) (*ChainSu
 		storage:           storage,
 		queryCtx:          queryCtx,
 		cancelQueryCtx:    cancel,
-		realtimeQueries:   make(map[common.Hash][]*realtimeEntry),
+		realtimeQueries:               make(map[common.Hash][]*realtimeEntry),
+		consecutiveZeroLogThreshold:   DefaultConsecutiveZeroLogThreshold,
 	}
 
 	return subscriber, nil
@@ -122,6 +124,17 @@ func (cs *ChainSubscriber) SetMaxQueriesPerMerge(n int) {
 	cs.realtimeMu.Lock()
 	defer cs.realtimeMu.Unlock()
 	cs.maxQueriesPerMerge = n
+}
+
+// SetConsecutiveZeroLogThreshold sets how many consecutive 0-log scan cycles
+// are allowed before forcing FromBlock to advance. Default is 3.
+// This prevents the scanner from getting stuck when there are genuinely no events,
+// which would cause the scan range to grow unboundedly and hit RPC block range limits.
+func (cs *ChainSubscriber) SetConsecutiveZeroLogThreshold(n int) {
+	if n < 1 {
+		n = 1
+	}
+	cs.consecutiveZeroLogThreshold = n
 }
 
 type subscription struct {
@@ -236,10 +249,28 @@ func (cs *ChainSubscriber) startRealtimeScanner() {
 }
 
 // runRealtimeScanner runs one loop per chain: collect all realtime queries, one FilterLogsBatch, then dispatch.
+// DefaultConsecutiveZeroLogThreshold is the number of consecutive scans returning 0 logs
+// before we force-advance FromBlock. This prevents the scanner from getting stuck when
+// there are genuinely no events for an extended period (which would otherwise cause the
+// scan range to grow unboundedly and exceed RPC block range limits).
+const DefaultConsecutiveZeroLogThreshold = 3
+
 // realtimeAdvanceProgress returns whether to advance persisted block progress after a merged FilterLogs call.
-// When the node returns 0 logs we must not advance, so the same range is retried and we do not skip events (e.g. Split/Merge).
-func realtimeAdvanceProgress(mergedLogCount int) bool {
-	return mergedLogCount > 0
+// When the node returns >0 logs, always advance and reset the counter.
+// When 0 logs, increment the consecutive counter. After reaching threshold, force-advance
+// to prevent the scan range from growing unboundedly (which causes RPC 400 errors on nodes
+// with block range limits like 10000).
+func realtimeAdvanceProgress(mergedLogCount int, consecutiveZeroLogs *int, threshold int) bool {
+	if mergedLogCount > 0 {
+		*consecutiveZeroLogs = 0
+		return true
+	}
+	*consecutiveZeroLogs++
+	if *consecutiveZeroLogs >= threshold {
+		*consecutiveZeroLogs = 0
+		return true
+	}
+	return false
 }
 
 // nextBlockToScanForRealtime returns the next block number to scan (inclusive) for a realtime query.
@@ -274,6 +305,7 @@ func (cs *ChainSubscriber) runRealtimeScanner() {
 
 	reduceBlocksPerScan := false
 	currBlocks := cs.currBlocksPerScan
+	consecutiveZeroLogs := 0
 
 	updateScan := func() {
 		if reduceBlocksPerScan {
@@ -551,8 +583,9 @@ func (cs *ChainSubscriber) runRealtimeScanner() {
 				}
 				log.Info("realtime scanner log received", "partitionKey", partKey, "block", l.BlockNumber, "txHash", l.TxHash.Hex(), "address", l.Address.Hex(), "topic0", t0.Hex())
 			}
-			// When RPC returns 0 logs do not advance progress: avoid permanently skipping blocks (Split/Merge events) on transient empty response or node drop.
-			advanceProgress := realtimeAdvanceProgress(len(mergedLogs))
+			// Advance progress when logs found, or after N consecutive zero-log scans
+			// to prevent FromBlock from getting stuck (causing unbounded range growth → RPC 400).
+			advanceProgress := realtimeAdvanceProgress(len(mergedLogs), &consecutiveZeroLogs, cs.consecutiveZeroLogThreshold)
 			// delivered[i] true if mergedLogs[i] was sent to at least one subscription (for missed-event diagnosis).
 			delivered := make([]bool, len(mergedLogs))
 			for _, g := range groupList {
