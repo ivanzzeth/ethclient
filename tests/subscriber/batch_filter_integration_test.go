@@ -1202,3 +1202,162 @@ func (h *countHandler) HandleQuery(ctx context.Context, q subscriber.Query, l ty
 	h.count++
 	return h.SimpleQueryHandler.HandleQuery(ctx, q, l)
 }
+
+// TestRealtime_MultiLayoutZeroLogs_FromBlockAdvances tests that the scan range FromBlock
+// advances when multiple realtime subscriptions with different topic layouts all return
+// 0 logs. This reproduces a production scenario (prediction-exchange bid1 on BSC) where:
+//   - 16 realtime filter queries split into 2 topic layouts ("1010" and "1100")
+//   - MaxQueriesPerMerge = 2 (BSC optimization)
+//   - All queries return 0 logs indefinitely (no on-chain events)
+//   - consecutiveZeroLogThreshold = 3 (default)
+//
+// The bug: SaveLatestBlockForQuery IS called after the threshold triggers, but the
+// scanner's FromBlock never advances past the original subscription start block.
+// This causes the scan range to grow unboundedly (e.g., [87256510, 87273024]),
+// eventually exceeding BSC's 10k block range limit.
+//
+// The test asserts that after enough scan cycles with continuous block production:
+//  1. SaveLatestBlockForQuery has been called for all queries
+//  2. The stored LatestBlockForQuery advances beyond the start block
+//  3. Both layout groups advance at the same rate (no layout lagging behind)
+//  4. The stored block is close to the chain head (not stuck at first advance point)
+func TestRealtime_MultiLayoutZeroLogs_FromBlockAdvances(t *testing.T) {
+	t.Parallel()
+	sim := helper.SetUpClient(t)
+	defer sim.Close()
+	sim.Client().SetBlockConfirmationsOnSubscription(0)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	chainID, err := sim.Client().ChainID(ctx)
+	require.NoError(t, err)
+	storage := newSpyStorage(chainID)
+	cs, err := subscriber.NewChainSubscriber(sim.Client().RpcClient(), storage)
+	require.NoError(t, err)
+	defer cs.Close()
+	cs.SetRetryInterval(testRetryInterval)
+	cs.SetMaxQueriesPerMerge(2) // BSC-like setting
+	sim.Client().SetSubscriber(cs)
+
+	// Get current block as subscription start
+	startBlock, err := sim.Client().BlockNumber(ctx)
+	require.NoError(t, err)
+
+	// Create multiple subscriptions with different topic layouts
+	type subInfo struct {
+		query ethereum.FilterQuery
+		ch    chan types.Log
+		sub   ethereum.Subscription
+	}
+	var subs []subInfo
+
+	// Group A: 4 queries with layout "1010" — topics = [[hash], nil, [hash], nil]
+	for i := 0; i < 4; i++ {
+		addr := common.BigToAddress(big.NewInt(int64(100 + i)))
+		topic0 := common.BigToHash(big.NewInt(int64(200 + i)))
+		topic2 := common.BigToHash(big.NewInt(int64(300 + i)))
+		q := ethereum.FilterQuery{
+			FromBlock: big.NewInt(int64(startBlock)),
+			Addresses: []common.Address{addr},
+			Topics:    [][]common.Hash{{topic0}, nil, {topic2}, nil},
+		}
+		ch := make(chan types.Log, 16)
+		sub, err := cs.SubscribeFilterLogs(ctx, q, ch)
+		require.NoError(t, err)
+		subs = append(subs, subInfo{q, ch, sub})
+	}
+
+	// Group B: 12 queries with layout "1100" — topics = [[hash], [hash]]
+	for i := 0; i < 12; i++ {
+		addr := common.BigToAddress(big.NewInt(int64(400 + i)))
+		topic0 := common.BigToHash(big.NewInt(int64(500 + i)))
+		topic1 := common.BigToHash(big.NewInt(int64(600 + i)))
+		q := ethereum.FilterQuery{
+			FromBlock: big.NewInt(int64(startBlock)),
+			Addresses: []common.Address{addr},
+			Topics:    [][]common.Hash{{topic0}, {topic1}},
+		}
+		ch := make(chan types.Log, 16)
+		sub, err := cs.SubscribeFilterLogs(ctx, q, ch)
+		require.NoError(t, err)
+		subs = append(subs, subInfo{q, ch, sub})
+	}
+	defer func() {
+		for _, s := range subs {
+			s.sub.Unsubscribe()
+		}
+	}()
+
+	// Commit empty blocks to advance the chain (no events emitted).
+	for i := 0; i < 10; i++ {
+		sim.Commit()
+	}
+
+	// Wait for threshold to trigger (>= 3 scan cycles with 0 logs).
+	time.Sleep(5 * testRetryInterval)
+
+	// SaveLatestBlockForQuery should have been called.
+	saves1 := storage.SaveLatestBlockCalls()
+	require.Greater(t, saves1, int32(0), "SaveLatestBlockForQuery should be called after consecutive zero-log threshold")
+
+	// Commit more empty blocks.
+	for i := 0; i < 10; i++ {
+		sim.Commit()
+	}
+
+	// Wait for more scan cycles.
+	time.Sleep(5 * testRetryInterval)
+
+	// SaveLatestBlockForQuery should continue being called.
+	saves2 := storage.SaveLatestBlockCalls()
+	require.Greater(t, saves2, saves1, "SaveLatestBlockForQuery should continue being called as more empty blocks are produced")
+
+	// Check that ALL queries have advanced their stored block beyond start.
+	for i, s := range subs {
+		latest, err := storage.LatestBlockForQuery(ctx, s.query)
+		require.NoError(t, err)
+		assert.Greater(t, latest, startBlock, "query %d: LatestBlockForQuery should advance beyond start block %d, got %d", i, startBlock, latest)
+	}
+
+	// The ultimate test: after enough cycles, LatestBlockForQuery should be close to
+	// current chain head, not stuck at the first advance point.
+	chainHead, err := sim.Client().BlockNumber(ctx)
+	require.NoError(t, err)
+	latestForQ0, err := storage.LatestBlockForQuery(ctx, subs[0].query)
+	require.NoError(t, err)
+	// Allow some slack (a few scan cycles worth of blocks).
+	assert.Greater(t, latestForQ0, chainHead-10,
+		"LatestBlockForQuery should be close to chain head %d, but got %d (stuck at start?)", chainHead, latestForQ0)
+
+	// Verify that both layout groups advance at the same rate (not one lagging).
+	// Collect minimum LatestBlockForQuery per layout group.
+	var minLayout1010, minLayout1100 uint64
+	for i, s := range subs {
+		latest, err := storage.LatestBlockForQuery(ctx, s.query)
+		require.NoError(t, err)
+		if i < 4 {
+			if minLayout1010 == 0 || latest < minLayout1010 {
+				minLayout1010 = latest
+			}
+		} else {
+			if minLayout1100 == 0 || latest < minLayout1100 {
+				minLayout1100 = latest
+			}
+		}
+	}
+
+	// With the shared-counter bug, one layout always lags behind the other by at
+	// least one advance cycle, causing the scan range FROM to be held back.
+	// In a correct implementation, both layouts should advance to the same endBlock
+	// because they share the same scan range (minStart/endBlock).
+	var diff uint64
+	if minLayout1010 > minLayout1100 {
+		diff = minLayout1010 - minLayout1100
+	} else {
+		diff = minLayout1100 - minLayout1010
+	}
+	assert.LessOrEqual(t, diff, uint64(0),
+		"both layouts should advance to exactly the same block; layout1010 min=%d, layout1100 min=%d, diff=%d (shared counter bug causes desync)",
+		minLayout1010, minLayout1100, diff)
+}
