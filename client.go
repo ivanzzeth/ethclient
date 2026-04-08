@@ -200,6 +200,10 @@ func (c *Client) SetNonceManager(nm nonce.Manager) {
 	c.nonceManager = nm
 }
 
+func (c *Client) GetNonceManager() nonce.Manager {
+	return c.nonceManager
+}
+
 func (c *Client) SetSubscriber(s subscriber.Subscriber) {
 	c.Subscriber = s
 }
